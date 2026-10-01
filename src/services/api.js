@@ -38,14 +38,54 @@ export function resolveVideoUrl(rawUrl, baseUrl = 'https://tuansuapi.store/v1') 
 }
 
 /**
+ * Detects whether an item or URL represents an image
+ */
+export function isMediaImage(item) {
+  if (!item) return false
+  if (typeof item === 'string') {
+    return (
+      item.startsWith('data:image') ||
+      /\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(item) ||
+      item.includes('/images/') ||
+      item.includes('img.apimatou.cc')
+    )
+  }
+  if (item.mediaType === 'image') return true
+  if (item.mediaType === 'video') return false
+  const modelStr = String(item.model || '').toLowerCase()
+  if (
+    modelStr.includes('image') ||
+    modelStr.includes('banana') ||
+    modelStr.includes('flare') ||
+    modelStr.includes('sunburst')
+  ) {
+    return true
+  }
+  const url = String(item.url || item.directUrl || '')
+  return isMediaImage(url)
+}
+
+/**
  * Generates direct image URL without query tampering
+ * Strips any unintended query parameters (like key or variant) that cause 400/403 on image CDNs
  */
 export function getDirectImageUrl(rawUrl, baseUrl) {
   if (!rawUrl) return null
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
     return rawUrl
   }
-  return resolveVideoUrl(rawUrl, baseUrl || getBaseUrl())
+  const resolved = resolveVideoUrl(rawUrl, baseUrl || getBaseUrl())
+  try {
+    const u = new URL(resolved)
+    u.searchParams.delete('key')
+    u.searchParams.delete('variant')
+    return u.href
+  } catch {
+    return resolved
+      .replace(/[?&]key=[^&]+/g, '')
+      .replace(/[?&]variant=[^&]+/g, '')
+      .replace(/\?$/, '')
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Download, Copy, Check, ExternalLink, Sparkles, X, Share2, Film, Loader2, RefreshCw, AlertCircle, Terminal, Code2 } from 'lucide-react'
-import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl } from '../services/api'
+import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage } from '../services/api'
 import { getApiKey } from '../services/storage'
 
 export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
@@ -16,10 +16,10 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
 
   if (!video || !video.url) return null
 
-  const isImage = video?.mediaType === 'image'
+  const isImage = isMediaImage(video)
   const effectiveKey = apiKey || getApiKey()
-  const cleanUrl = resolveVideoUrl(video.url)
-  const directUrl = isImage ? (video.directUrl || cleanUrl) : (video.directUrl || getDirectVideoUrl(video.url, effectiveKey))
+  const cleanUrl = isImage ? getDirectImageUrl(video.url) : resolveVideoUrl(video.url)
+  const directUrl = isImage ? cleanUrl : (video.directUrl || getDirectVideoUrl(video.url, effectiveKey))
   const [actualDimensions, setActualDimensions] = useState(null)
 
   // Use direct stream URL as primary source for native streaming, with blob fallback
@@ -127,68 +127,33 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
     }
   }
 
-  const handleOpenNewTab = () => {
-    const targetUrl = activePlayUrl || directUrl || cleanUrl
+  const handleOpenNewTab = (e) => {
+    const targetUrl = isImage ? (cleanUrl || video.url) : (activePlayUrl || directUrl || cleanUrl)
     if (!targetUrl) return
 
-    if (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
-      const win = window.open('', '_blank')
-      if (win) {
-        win.document.write(`
-          <!DOCTYPE html>
-          <html>
-            <head>
-              <meta charset="utf-8">
-              <title>${isImage ? 'Seedance Studio - Xem ảnh' : 'Seedance Studio - Xem video'}</title>
-              <style>
-                * { box-sizing: border-box; }
-                body {
-                  margin: 0;
-                  padding: 24px;
-                  background: #09090b;
-                  color: #fff;
-                  font-family: system-ui, -apple-system, sans-serif;
-                  display: flex;
-                  flex-direction: column;
-                  align-items: center;
-                  justify-content: center;
-                  min-height: 100vh;
-                }
-                .media-box {
-                  display: flex;
-                  align-items: center;
-                  justify-content: center;
-                  max-width: 95vw;
-                  max-height: 90vh;
-                }
-                img, video {
-                  max-width: 100%;
-                  max-height: 90vh;
-                  object-fit: contain;
-                  border-radius: 12px;
-                  box-shadow: 0 20px 60px rgba(0,0,0,0.85);
-                }
-                .info-bar {
-                  margin-top: 14px;
-                  font-size: 13px;
-                  color: #71717a;
-                }
-              </style>
-            </head>
-            <body>
-              <div class="media-box">
-                ${isImage ? `<img src="${targetUrl}" alt="Seedance Image" />` : `<video src="${targetUrl}" controls autoplay></video>`}
-              </div>
-              <div class="info-bar">Mở trực tiếp từ Seedance Studio</div>
-            </body>
-          </html>
-        `)
-        win.document.close()
+    if (targetUrl.startsWith('data:')) {
+      if (e) e.preventDefault()
+      try {
+        const arr = targetUrl.split(',')
+        const mime = arr[0].match(/:(.*?);/)[1]
+        const bstr = atob(arr[1])
+        let n = bstr.length
+        const u8arr = new Uint8Array(n)
+        while (n--) {
+          u8arr[n] = bstr.charCodeAt(n)
+        }
+        const blob = new Blob([u8arr], { type: mime })
+        const blobUrlGenerated = URL.createObjectURL(blob)
+        window.open(blobUrlGenerated, '_blank')
         return
+      } catch (err) {
+        console.error('Failed to create blob from dataUrl', err)
       }
     }
 
-    window.open(targetUrl, '_blank', 'noopener,noreferrer')
+    if (!e) {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const pythonSnippet = isImage
@@ -378,14 +343,17 @@ print("Tải video thành công!")`
             <span>{copiedLink ? 'Đã copy link' : (isImage ? 'Copy link ảnh' : 'Copy link video (Key)')}</span>
           </button>
 
-          <button
+          <a
+            href={isImage ? (cleanUrl || video.url) : (activePlayUrl || directUrl || cleanUrl)}
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={handleOpenNewTab}
-            className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition"
+            className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
             title="Mở trên tab mới (trình duyệt hỗ trợ xem và lưu trực tiếp)"
           >
             <ExternalLink className="w-3.5 h-3.5" />
             <span>Mở tab mới</span>
-          </button>
+          </a>
 
           <button
             onClick={handleDownload}

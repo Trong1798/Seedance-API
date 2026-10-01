@@ -57,7 +57,31 @@ export function getSavedVideos() {
           url = `${host}${url.substring(url.indexOf('/v1/'))}`
         }
       }
-      return { ...v, url }
+
+      const modelStr = String(v.model || '').toLowerCase()
+      const isImg = v.mediaType === 'image' ||
+        modelStr.includes('image') ||
+        modelStr.includes('banana') ||
+        modelStr.includes('flare') ||
+        modelStr.includes('sunburst') ||
+        (url && (/\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(url) || url.includes('img.apimatou.cc') || url.startsWith('data:image')))
+
+      let directUrl = v.directUrl
+      if (isImg) {
+        if (url && typeof url === 'string' && !url.startsWith('data:') && !url.startsWith('blob:')) {
+          url = url.replace(/[?&]key=[^&]+/g, '').replace(/[?&]variant=[^&]+/g, '').replace(/\?$/, '')
+        }
+        if (directUrl && typeof directUrl === 'string' && !directUrl.startsWith('data:') && !directUrl.startsWith('blob:')) {
+          directUrl = directUrl.replace(/[?&]key=[^&]+/g, '').replace(/[?&]variant=[^&]+/g, '').replace(/\?$/, '')
+        }
+      }
+
+      return {
+        ...v,
+        mediaType: isImg ? 'image' : (v.mediaType || 'video'),
+        url,
+        directUrl: directUrl || url,
+      }
     })
   } catch (e) {
     console.error('Failed to parse saved videos:', e)
