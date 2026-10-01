@@ -6,7 +6,7 @@ export const VIDEO_MODELS = [
     description: 'Chất lượng điện ảnh đỉnh cao, hỗ trợ video dài từ 5s đến 30s',
     durations: [5, 10, 15, 20, 25, 30],
     defaultDuration: 10,
-    supportedRatios: ['16:9', '9:16', '21:9'],
+    supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
     defaultRatio: '16:9',
     pricing: {
       5: 1300,
@@ -25,7 +25,7 @@ export const VIDEO_MODELS = [
     description: 'Tốc độ render cực nhanh, giá siêu tiết kiệm',
     durations: [5, 10, 15],
     defaultDuration: 5,
-    supportedRatios: ['16:9', '9:16', '21:9'],
+    supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
     defaultRatio: '16:9',
     pricing: {
       5: 1100,
@@ -123,23 +123,58 @@ export const MODELS = VIDEO_MODELS
 
 export const ASPECT_RATIOS = [
   {
-    id: '16:9',
-    label: '16:9',
-    desc: 'Ngang (YouTube, TV, PC)',
-    shape: 'landscape-wide',
-    resolutions: {
-      '720p': '1280x720',
-      '1080p': '1792x1024',
-    },
-  },
-  {
     id: '9:16',
     label: '9:16',
     desc: 'Dọc (TikTok, Reels, Shorts)',
     shape: 'tall',
+    col: 'left',
     resolutions: {
       '720p': '720x1280',
       '1080p': '1024x1792',
+    },
+  },
+  {
+    id: '3:4',
+    label: '3:4',
+    desc: 'Dọc màn hình iPad 3:4',
+    shape: 'portrait-compact',
+    col: 'left',
+    resolutions: {
+      '720p': '720x960',
+      '1080p': '1080x1440',
+    },
+  },
+  {
+    id: '4:3',
+    label: '4:3',
+    desc: 'Ngang kinh điển 4:3',
+    shape: 'landscape-compact',
+    col: 'left',
+    resolutions: {
+      '720p': '960x720',
+      '1080p': '1440x1080',
+    },
+  },
+  {
+    id: '1:1',
+    label: '1:1',
+    desc: 'Vuông 1:1',
+    shape: 'square',
+    col: 'right',
+    resolutions: {
+      '720p': '720x720',
+      '1080p': '1024x1024',
+    },
+  },
+  {
+    id: '16:9',
+    label: '16:9',
+    desc: 'Ngang chuẩn (YouTube, TV, PC)',
+    shape: 'landscape-wide',
+    col: 'right',
+    resolutions: {
+      '720p': '1280x720',
+      '1080p': '1792x1024',
     },
   },
   {
@@ -147,95 +182,18 @@ export const ASPECT_RATIOS = [
     label: '21:9',
     desc: 'Điện ảnh siêu rộng 21:9 (Ultrawide)',
     shape: 'ultrawide',
+    col: 'right',
     resolutions: {
       '720p': '1680x720',
       '1080p': '2560x1080',
     },
   },
 ]
+
 export const IMAGE_ASPECT_RATIOS = [
-  {
-    id: '9:16',
-    label: '9:16',
-    col: 'left',
-    desc: 'Dọc (TikTok, Reels, Shorts)',
-    shape: 'tall',
-    sizes: {
-      '1k': '1024x1792',
-      '2k': '1440x2560',
-      '4k': '2160x3840',
-    },
-    fallbackSize: '1024x1792',
-  },
-  {
-    id: '2:3',
-    label: '2:3',
-    col: 'left',
-    desc: 'Dọc chân dung 2:3',
-    shape: 'portrait',
-    sizes: {
-      '1k': '832x1216',
-      '2k': '1440x2160',
-      '4k': '2560x3840',
-    },
-    fallbackSize: '1024x1792',
-  },
-  {
-    id: '4:3',
-    label: '4:3',
-    col: 'left',
-    desc: 'Ngang kinh điển 4:3',
-    shape: 'landscape-compact',
-    sizes: {
-      '1k': '1152x864',
-      '2k': '2048x1536',
-      '4k': '3840x2880',
-    },
-    fallbackSize: '1792x1024',
-  },
-  {
-    id: '3:2',
-    label: '3:2',
-    col: 'left',
-    desc: 'Ngang ảnh 35mm 3:2',
-    shape: 'landscape-medium',
-    sizes: {
-      '1k': '1216x832',
-      '2k': '2160x1440',
-      '4k': '3840x2560',
-    },
-    fallbackSize: '1792x1024',
-  },
-  {
-    id: '3:4',
-    label: '3:4',
-    col: 'right',
-    desc: 'Dọc màn hình iPad 3:4',
-    shape: 'portrait-compact',
-    sizes: {
-      '1k': '864x1152',
-      '2k': '1536x2048',
-      '4k': '2880x3840',
-    },
-    fallbackSize: '1024x1792',
-  },
-  {
-    id: '1:1',
-    label: '1:1',
-    col: 'right',
-    desc: 'Vuông Instagram 1:1',
-    shape: 'square',
-    sizes: {
-      '1k': '1024x1024',
-      '2k': '2048x2048',
-      '4k': '4096x4096',
-    },
-    fallbackSize: '1024x1024',
-  },
   {
     id: '16:9',
     label: '16:9',
-    col: 'right',
     desc: 'Ngang chuẩn 16:9 YouTube/PC',
     shape: 'landscape-wide',
     sizes: {
@@ -246,17 +204,28 @@ export const IMAGE_ASPECT_RATIOS = [
     fallbackSize: '1792x1024',
   },
   {
-    id: '21:9',
-    label: '21:9',
-    col: 'right',
-    desc: 'Điện ảnh siêu rộng 21:9',
-    shape: 'ultrawide',
+    id: '9:16',
+    label: '9:16',
+    desc: 'Dọc TikTok, Reels, Shorts',
+    shape: 'tall',
     sizes: {
-      '1k': '1792x768',
-      '2k': '2560x1080',
-      '4k': '3840x1646',
+      '1k': '1024x1792',
+      '2k': '1440x2560',
+      '4k': '2160x3840',
     },
-    fallbackSize: '1792x1024',
+    fallbackSize: '1024x1792',
+  },
+  {
+    id: '1:1',
+    label: '1:1',
+    desc: 'Vuông Instagram 1:1',
+    shape: 'square',
+    sizes: {
+      '1k': '1024x1024',
+      '2k': '2048x2048',
+      '4k': '4096x4096',
+    },
+    fallbackSize: '1024x1024',
   },
 ]
 
@@ -358,10 +327,10 @@ export const IMAGE_INSPIRATION_PROMPTS = [
     ratio: '16:9',
   },
   {
-    label: 'Nano Banana Ultrawide 21:9',
-    prompt: 'Breathtaking 21:9 ultrawide panorama of a neon cyberpunk metropolis in torrential rain, reflections on wet asphalt, volumetric fog, 4k cinematic',
+    label: 'Nano Banana Ultrawide',
+    prompt: 'Breathtaking 16:9 cinematic panorama of a neon cyberpunk metropolis in torrential rain, reflections on wet asphalt, volumetric fog, 4k cinematic',
     model: 'gemini-3-pro-image-preview',
-    ratio: '21:9',
+    ratio: '16:9',
   },
   {
     label: 'Pixar Baby Dragon',

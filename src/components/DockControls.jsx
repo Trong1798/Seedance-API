@@ -164,8 +164,8 @@ export default function DockControls({
 
   const supportedVideoRatioIds = currentModel?.supportedRatios || ['16:9', '9:16']
   const availableVideoRatios = ASPECT_RATIOS.filter(r => supportedVideoRatioIds.includes(r.id))
-  const leftColImageRatios = IMAGE_ASPECT_RATIOS.filter(r => r.col === 'left')
-  const rightColImageRatios = IMAGE_ASPECT_RATIOS.filter(r => r.col === 'right')
+  const leftColVideoRatios = availableVideoRatios.filter(r => r.col === 'left')
+  const rightColVideoRatios = availableVideoRatios.filter(r => r.col === 'right')
   const supportedImageRes = currentModel?.supportedResolutions || ['1k', '2k']
 
   return (
@@ -317,14 +317,41 @@ export default function DockControls({
             <div className="absolute bottom-full mb-2.5 left-0 z-50 min-w-[260px] p-3 rounded-2xl glass-popover animate-in fade-in zoom-in-95 duration-150">
               <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pb-2 border-b border-white/[0.08] mb-2.5 flex items-center justify-between">
                 <span>ASPECT RATIO</span>
-                <span className="text-[9px] text-zinc-400/80 font-normal">{isImageMode ? '8 tỉ lệ' : currentModel.name}</span>
+                <span className="text-[9px] text-zinc-400/80 font-normal">
+                  {isImageMode ? `${IMAGE_ASPECT_RATIOS.length} TỈ LỆ` : `${availableVideoRatios.length} TỈ LỆ`}
+                </span>
               </div>
 
               {isImageMode ? (
-                /* 2-Column Grid Layout matching the user screenshot */
-                <div className="grid grid-cols-2 gap-2">
+                /* Image Mode: 3 standard ratios (16:9, 9:16, 1:1) */
+                <div className="flex flex-col gap-1 min-w-[220px]">
+                  {IMAGE_ASPECT_RATIOS.map(r => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        setAspectRatio(r.id)
+                        setShowRatioMenu(false)
+                      }}
+                      className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                        aspectRatio === r.id
+                          ? 'bg-white/10 text-[#e5ff00] font-bold border border-[#e5ff00]/50 shadow-[0_0_12px_rgba(229,255,0,0.15),inset_0_1px_0_rgba(255,255,255,0.2)]'
+                          : 'hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <RatioShapeIcon ratio={r.id} className={aspectRatio === r.id ? 'text-[#e5ff00]' : 'text-zinc-400'} />
+                        <span>{r.label}</span>
+                      </div>
+                      <span className="text-[10px] text-zinc-400">{r.desc?.split('(')[0]}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : availableVideoRatios.length > 3 ? (
+                /* Video Mode (Seedance 2.0 / 2.5): 6 Ratios in 2-Column Grid Layout */
+                <div className="grid grid-cols-2 gap-2 min-w-[220px]">
                   <div className="flex flex-col gap-1">
-                    {leftColImageRatios.map(r => (
+                    {leftColVideoRatios.map(r => (
                       <button
                         key={r.id}
                         type="button"
@@ -345,7 +372,7 @@ export default function DockControls({
                   </div>
 
                   <div className="flex flex-col gap-1">
-                    {rightColImageRatios.map(r => (
+                    {rightColVideoRatios.map(r => (
                       <button
                         key={r.id}
                         type="button"
@@ -366,7 +393,8 @@ export default function DockControls({
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-1">
+                /* Video Mode (Veo 3.1 / Gemini Omni): Compact List */
+                <div className="flex flex-col gap-1 min-w-[200px]">
                   {availableVideoRatios.map(r => (
                     <button
                       key={r.id}
