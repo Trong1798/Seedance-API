@@ -19,7 +19,8 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
   const isImage = video?.mediaType === 'image'
   const effectiveKey = apiKey || getApiKey()
   const cleanUrl = resolveVideoUrl(video.url)
-  const directUrl = video.directUrl || getDirectVideoUrl(video.url, effectiveKey)
+  const directUrl = isImage ? (video.directUrl || cleanUrl) : (video.directUrl || getDirectVideoUrl(video.url, effectiveKey))
+  const [actualDimensions, setActualDimensions] = useState(null)
 
   // Use direct stream URL as primary source for native streaming, with blob fallback
   const activePlayUrl = blobUrl || directUrl || cleanUrl
@@ -76,12 +77,37 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
       let activeUrl = blobUrl
 
       if (!activeUrl) {
-        // Fetch as blob for proper filename download
         try {
-          activeUrl = await fetchVideoBlob(directUrl || cleanUrl, effectiveKey)
+          activeUrl = await fetchVideoBlob(isImage ? cleanUrl : (directUrl || cleanUrl), effectiveKey)
           setBlobUrl(activeUrl)
         } catch (fetchErr) {
-          activeUrl = directUrl
+          activeUrl = isImage ? cleanUrl : (directUrl || cleanUrl)
+        }
+      }
+
+      // For cross-origin images, convert to blob via canvas so download attribute works properly
+      if (isImage && activeUrl.startsWith('http')) {
+        try {
+          const blobUrlGenerated = await new Promise((resolve, reject) => {
+            const img = new Image()
+            img.crossOrigin = 'anonymous'
+            img.onload = () => {
+              const canvas = document.createElement('canvas')
+              canvas.width = img.naturalWidth
+              canvas.height = img.naturalHeight
+              const ctx = canvas.getContext('2d')
+              ctx.drawImage(img, 0, 0)
+              canvas.toBlob((blob) => {
+                if (blob) resolve(URL.createObjectURL(blob))
+                else reject(new Error('Canvas blob is null'))
+              }, 'image/png')
+            }
+            img.onerror = () => reject(new Error('Cross-origin canvas blocked'))
+            img.src = activeUrl
+          })
+          activeUrl = blobUrlGenerated
+        } catch {
+          // Fall back to original activeUrl
         }
       }
 
@@ -102,16 +128,75 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
   }
 
   const handleOpenNewTab = () => {
-    window.open(directUrl || cleanUrl, '_blank')
+    const targetUrl = activePlayUrl || directUrl || cleanUrl
+    if (!targetUrl) return
+
+    if (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>${isImage ? 'Seedance Studio - Xem ảnh' : 'Seedance Studio - Xem video'}</title>
+              <style>
+                * { box-sizing: border-box; }
+                body {
+                  margin: 0;
+                  padding: 24px;
+                  background: #09090b;
+                  color: #fff;
+                  font-family: system-ui, -apple-system, sans-serif;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  justify-content: center;
+                  min-height: 100vh;
+                }
+                .media-box {
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  max-width: 95vw;
+                  max-height: 90vh;
+                }
+                img, video {
+                  max-width: 100%;
+                  max-height: 90vh;
+                  object-fit: contain;
+                  border-radius: 12px;
+                  box-shadow: 0 20px 60px rgba(0,0,0,0.85);
+                }
+                .info-bar {
+                  margin-top: 14px;
+                  font-size: 13px;
+                  color: #71717a;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="media-box">
+                ${isImage ? `<img src="${targetUrl}" alt="Seedance Image" />` : `<video src="${targetUrl}" controls autoplay></video>`}
+              </div>
+              <div class="info-bar">Mở trực tiếp từ Seedance Studio</div>
+            </body>
+          </html>
+        `)
+        win.document.close()
+        return
+      }
+    }
+
+    window.open(targetUrl, '_blank', 'noopener,noreferrer')
   }
 
   const pythonSnippet = isImage
-    ? `# Cách tải ảnh bằng Python theo tài liệu TuanSu API:
+    ? `# Cách tải ảnh bằng Python:
 import requests
 
 url = "${cleanUrl}"
-headers = {"Authorization": "Bearer ${effectiveKey ? effectiveKey.slice(0, 10) + '...' : '<API_KEY>'}"}
-response = requests.get(url, headers=headers)
+response = requests.get(url)
 with open("seedance_image_${video.id || 'output'}.png", "wb") as f:
     f.write(response.content)
 print("Tải ảnh thành công!")`
@@ -150,7 +235,7 @@ print("Tải video thành công!")`
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 mt-0.5">
-                {video.model}{video.seconds ? ` • ${video.seconds}s` : ''} • {video.size}
+                {video.model}{video.seconds ? ` • ${video.seconds}s` : ''} • {actualDimensions || video.size}
               </p>
             </div>
           </div>
@@ -185,6 +270,11 @@ print("Tải video thành công!")`
               src={activePlayUrl}
               alt={video.prompt}
               className="w-full h-full max-h-[600px] object-contain"
+              onLoad={(e) => {
+                if (e.target.naturalWidth && e.target.naturalHeight) {
+                  setActualDimensions(`${e.target.naturalWidth}x${e.target.naturalHeight}`)
+                }
+              }}
               onError={() => {
                 if (!blobUrl && directUrl) {
                   fetchVideoBlob(directUrl, effectiveKey)
@@ -282,10 +372,10 @@ print("Tải video thành công!")`
           <button
             onClick={handleCopyLink}
             className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition"
-            title={isImage ? "Sao chép link ảnh trực tiếp có key" : "Sao chép link stream trực tiếp có gắn key"}
+            title={isImage ? "Sao chép link ảnh trực tiếp" : "Sao chép link stream trực tiếp có gắn key"}
           >
             {copiedLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-            <span>{copiedLink ? 'Đã copy link' : (isImage ? 'Copy link ảnh (Key)' : 'Copy link video (Key)')}</span>
+            <span>{copiedLink ? 'Đã copy link' : (isImage ? 'Copy link ảnh' : 'Copy link video (Key)')}</span>
           </button>
 
           <button

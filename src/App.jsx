@@ -100,8 +100,8 @@ export default function App() {
         const ratioObj = IMAGE_ASPECT_RATIOS.find(r => r.id === aspectRatio) || IMAGE_ASPECT_RATIOS[0]
         let size = ratioObj.sizes?.[effectiveRes]
 
-        // For standard models (gpt-image-2) requiring standard sizes
-        if (model.startsWith('gpt-image-2')) {
+        // For standard models requiring standard gateway sizes (1024x1024, 1792x1024, 1024x1792)
+        if (model.startsWith('gpt-image-2') || model === 'gemini-3.1-flash-image-preview') {
           size = ratioObj.fallbackSize || '1024x1024'
         }
         if (!size) {

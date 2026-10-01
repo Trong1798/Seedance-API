@@ -68,8 +68,8 @@ export const VIDEO_MODELS = [
 
 export const IMAGE_MODELS = [
   {
-    id: 'gemini-3-pro-image',
-    name: 'gemini-3-pro-image (Nano Banana Pro)',
+    id: 'gemini-3-pro-image-preview',
+    name: 'gemini-3-pro-image-preview (Nano Banana Pro)',
     tag: 'Nano Banana Pro',
     description: 'Gemini 3 Pro Image — Siêu phẩm tạo ảnh chân thực, chi tiết cao, hỗ trợ 2K và 4K',
     price: 70, // 70đ/yêu cầu theo bảng giá web
@@ -354,13 +354,13 @@ export const IMAGE_INSPIRATION_PROMPTS = [
   {
     label: 'Nano Banana Pro Cyber-Dragon',
     prompt: 'Ultra detailed 4K cinematic photo of a mechanical neon cyber dragon coiled around Tokyo tower at midnight, photorealistic, Unreal Engine 5 render',
-    model: 'gemini-3-pro-image',
+    model: 'gemini-3-pro-image-preview',
     ratio: '16:9',
   },
   {
     label: 'Nano Banana Ultrawide 21:9',
     prompt: 'Breathtaking 21:9 ultrawide panorama of a neon cyberpunk metropolis in torrential rain, reflections on wet asphalt, volumetric fog, 4k cinematic',
-    model: 'gemini-3-pro-image',
+    model: 'gemini-3-pro-image-preview',
     ratio: '21:9',
   },
   {

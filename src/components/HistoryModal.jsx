@@ -14,10 +14,34 @@ export default function HistoryModal({
   if (!isOpen) return null
 
   const handleOpenDirectTab = (vid) => {
-    const directUrl = getDirectVideoUrl(vid.url, apiKey)
-    if (directUrl) {
-      window.open(directUrl, '_blank')
+    const isImg = vid.mediaType === 'image'
+    const targetUrl = isImg ? (vid.directUrl || vid.url) : getDirectVideoUrl(vid.url, apiKey)
+    if (!targetUrl) return
+
+    if (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')) {
+      const win = window.open('', '_blank')
+      if (win) {
+        win.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>${isImg ? 'Seedance Studio - Xem ảnh' : 'Seedance Studio - Xem video'}</title>
+              <style>
+                body { margin: 0; background: #09090b; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+                img, video { max-width: 95vw; max-height: 95vh; object-fit: contain; border-radius: 12px; }
+              </style>
+            </head>
+            <body>
+              ${isImg ? `<img src="${targetUrl}" alt="Seedance Image" />` : `<video src="${targetUrl}" controls autoplay></video>`}
+            </body>
+          </html>
+        `)
+        win.document.close()
+        return
+      }
     }
+    window.open(targetUrl, '_blank', 'noopener,noreferrer')
   }
 
   return (

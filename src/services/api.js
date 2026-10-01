@@ -38,6 +38,17 @@ export function resolveVideoUrl(rawUrl, baseUrl = 'https://tuansuapi.store/v1') 
 }
 
 /**
+ * Generates direct image URL without query tampering
+ */
+export function getDirectImageUrl(rawUrl, baseUrl) {
+  if (!rawUrl) return null
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
+    return rawUrl
+  }
+  return resolveVideoUrl(rawUrl, baseUrl || getBaseUrl())
+}
+
+/**
  * Generates direct streaming URL with authentication query parameter (&key=...)
  * As recommended by provider documentation for browser playback and downloads.
  */
@@ -55,7 +66,7 @@ export function getDirectVideoUrl(rawUrl, apiKey, baseUrl) {
     if (u.pathname.endsWith('/content') && !u.searchParams.has('variant')) {
       u.searchParams.set('variant', 'video')
     }
-    if (effectiveKey && !u.searchParams.has('key')) {
+    if (effectiveKey && !u.searchParams.has('key') && (u.pathname.includes('/content') || u.hostname.includes('tuansuapi.store'))) {
       u.searchParams.set('key', effectiveKey.trim())
     }
     return u.href
@@ -69,22 +80,34 @@ export function getDirectVideoUrl(rawUrl, apiKey, baseUrl) {
 }
 
 /**
- * Fetch video content as Blob URL for local memory caching
+ * Fetch video/image content as Blob URL for local memory caching
  */
 export async function fetchVideoBlob(url, apiKey, baseUrl) {
-  if (!url) throw new Error('URL video không tồn tại.')
+  if (!url) throw new Error('URL không tồn tại.')
   if (url.startsWith('blob:') || url.startsWith('data:')) {
     return url
   }
 
   const effectiveKey = apiKey || getApiKey()
-  const cleanUrl = getDirectVideoUrl(url, effectiveKey, baseUrl)
+  const rawBase = baseUrl || getBaseUrl() || 'https://tuansuapi.store/v1'
+  const isImageFile = /\.(png|jpe?g|webp|gif)($|\?)/i.test(url) || url.includes('/images/') || url.includes('img.apimatou.cc')
+
+  let cleanUrl = isImageFile ? getDirectImageUrl(url, rawBase) : getDirectVideoUrl(url, effectiveKey, rawBase)
   const headers = {}
-  if (effectiveKey) {
+
+  let isGatewayDomain = false
+  try {
+    const targetHost = new URL(cleanUrl).hostname
+    const baseHost = new URL(rawBase).hostname
+    isGatewayDomain = targetHost === baseHost || targetHost.includes('tuansuapi.store')
+  } catch {}
+
+  // Only pass Authorization header to Gateway domain, not external image CDNs (which would trigger CORS errors)
+  if (effectiveKey && isGatewayDomain) {
     headers['Authorization'] = `Bearer ${effectiveKey.trim()}`
   }
 
-  const res = await fetch(cleanUrl, { headers })
+  const res = await fetch(cleanUrl, { credentials: 'omit', headers })
   if (!res.ok) {
     let errMsg = `Mã HTTP: ${res.status}`
     try {
@@ -95,7 +118,7 @@ export async function fetchVideoBlob(url, apiKey, baseUrl) {
     } catch {
       // not JSON
     }
-    throw new Error(`Không thể nạp file video từ máy chủ (${errMsg})`)
+    throw new Error(`Không thể nạp file từ máy chủ (${errMsg})`)
   }
 
   const blob = await res.blob()
@@ -481,7 +504,7 @@ export async function generateImage({
     }
 
     const resolvedUrl = resolveVideoUrl(imageUrl, cleanBase)
-    const directUrl = getDirectVideoUrl(resolvedUrl, apiKey, cleanBase)
+    const directUrl = getDirectImageUrl(resolvedUrl, cleanBase)
 
     return {
       id: `img_${Date.now()}`,
