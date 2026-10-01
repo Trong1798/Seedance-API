@@ -97,10 +97,17 @@ export default function DockControls({
   const [modelSearchQuery, setModelSearchQuery] = useState('')
   const [showRatioMenu, setShowRatioMenu] = useState(false)
   const [showResolutionMenu, setShowResolutionMenu] = useState(false)
+  const [showDurationMenu, setShowDurationMenu] = useState(false)
+  const [customDurationInput, setCustomDurationInput] = useState(`${seconds}s`)
 
   const modelMenuRef = useRef(null)
   const ratioMenuRef = useRef(null)
   const resolutionMenuRef = useRef(null)
+  const durationMenuRef = useRef(null)
+
+  useEffect(() => {
+    setCustomDurationInput(`${seconds}s`)
+  }, [seconds])
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -113,6 +120,9 @@ export default function DockControls({
       if (resolutionMenuRef.current && !resolutionMenuRef.current.contains(e.target)) {
         setShowResolutionMenu(false)
       }
+      if (durationMenuRef.current && !durationMenuRef.current.contains(e.target)) {
+        setShowDurationMenu(false)
+      }
     }
     document.addEventListener('mousedown', handleClickOutside)
     return () => document.removeEventListener('mousedown', handleClickOutside)
@@ -122,23 +132,55 @@ export default function DockControls({
     setShowModelMenu(!showModelMenu)
     setShowRatioMenu(false)
     setShowResolutionMenu(false)
+    setShowDurationMenu(false)
   }
 
   const toggleRatioMenu = () => {
     setShowRatioMenu(!showRatioMenu)
     setShowModelMenu(false)
     setShowResolutionMenu(false)
+    setShowDurationMenu(false)
   }
 
   const toggleResolutionMenu = () => {
     setShowResolutionMenu(!showResolutionMenu)
     setShowModelMenu(false)
     setShowRatioMenu(false)
+    setShowDurationMenu(false)
   }
 
-  const currentCost = isImageMode
-    ? (currentModel?.price || 70)
-    : (currentModel?.pricing?.[seconds] || currentModel?.pricing?.[currentModel?.durations?.[0]] || 2400)
+  const toggleDurationMenu = () => {
+    setShowDurationMenu(!showDurationMenu)
+    setShowModelMenu(false)
+    setShowRatioMenu(false)
+    setShowResolutionMenu(false)
+  }
+
+  const handleCustomDurationChange = (e) => {
+    const val = e.target.value
+    setCustomDurationInput(val)
+    const num = parseInt(val.replace(/\D/g, ''), 10)
+    if (!isNaN(num) && num >= 5 && num <= 30) {
+      setSeconds(num)
+    }
+  }
+
+  const handleCustomDurationBlur = () => {
+    const num = parseInt(customDurationInput.replace(/\D/g, ''), 10)
+    const valid = isNaN(num) ? 10 : Math.max(5, Math.min(30, num))
+    setSeconds(valid)
+    setCustomDurationInput(`${valid}s`)
+  }
+
+  const handleCustomDurationKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      const num = parseInt(customDurationInput.replace(/\D/g, ''), 10)
+      const valid = isNaN(num) ? 10 : Math.max(5, Math.min(30, num))
+      setSeconds(valid)
+      setCustomDurationInput(`${valid}s`)
+      setShowDurationMenu(false)
+    }
+  }
 
   const handleModelChange = (newModelId) => {
     setModel(newModelId)
@@ -151,7 +193,11 @@ export default function DockControls({
     } else {
       const selectedM = VIDEO_MODELS.find(m => m.id === newModelId)
       if (selectedM) {
-        if (!selectedM.durations.includes(seconds)) {
+        if (selectedM.id === 'seedance_2.5') {
+          if (seconds < 5 || seconds > 30) {
+            setSeconds(selectedM.defaultDuration || 10)
+          }
+        } else if (!selectedM.durations.includes(seconds)) {
           setSeconds(selectedM.defaultDuration)
         }
         const supported = selectedM.supportedRatios || ['16:9', '9:16']
@@ -513,21 +559,96 @@ export default function DockControls({
           )}
         </div>
 
-        {/* Duration / Seconds (HIDDEN IN IMAGE MODE as requested) */}
-        {!isImageMode && currentModel?.durations && (
-          <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl glass-pill text-xs text-zinc-300">
-            <Clock className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
-            <select
-              value={seconds}
-              onChange={(e) => setSeconds(Number(e.target.value))}
-              className="bg-transparent text-xs text-zinc-200 font-semibold focus:outline-none cursor-pointer pr-1"
+        {/* Duration Popover (HIDDEN IN IMAGE MODE as requested) */}
+        {!isImageMode && (
+          <div className="relative" ref={durationMenuRef}>
+            <button
+              type="button"
+              onClick={toggleDurationMenu}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-semibold transition-all ${
+                showDurationMenu
+                  ? 'bg-white/10 text-[#e5ff00] border-[#e5ff00]/50 shadow-[0_0_12px_rgba(229,255,0,0.2)]'
+                  : 'glass-pill text-zinc-300 hover:text-white border-transparent'
+              }`}
             >
-              {currentModel.durations.map(sec => (
-                <option key={sec} value={sec} className="bg-[#18181b] text-white">
-                  {sec}s
-                </option>
-              ))}
-            </select>
+              <Clock className={`w-3.5 h-3.5 ${showDurationMenu ? 'text-[#e5ff00]' : 'text-zinc-400'}`} />
+              <span>{seconds}s</span>
+            </button>
+
+            {showDurationMenu && (
+              <div className="absolute bottom-full mb-2.5 left-0 z-50 min-w-[210px] p-3 rounded-2xl glass-popover animate-in fade-in zoom-in-95 duration-150 shadow-2xl">
+                <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pb-2 border-b border-white/[0.08] mb-2.5 flex items-center justify-between">
+                  <span>Duration</span>
+                  <span className="text-[9px] text-zinc-400/80 font-normal">
+                    {currentModel?.id === 'seedance_2.5' ? '5s - 30s' : `${currentModel?.name || ''}`}
+                  </span>
+                </div>
+
+                {currentModel?.id === 'seedance_2.5' ? (
+                  /* Custom input matching the user screenshot */
+                  <div className="flex flex-col gap-2">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={customDurationInput}
+                        onChange={handleCustomDurationChange}
+                        onBlur={handleCustomDurationBlur}
+                        onKeyDown={handleCustomDurationKeyDown}
+                        placeholder="18s"
+                        autoFocus
+                        className="w-full bg-[#18181b]/90 border border-zinc-700/80 hover:border-zinc-500 focus:border-[#e5ff00] focus:ring-1 focus:ring-[#e5ff00]/50 rounded-xl px-3 py-2 text-sm font-semibold text-white placeholder-zinc-500 focus:outline-none transition-all shadow-inner"
+                      />
+                    </div>
+                    {/* Quick preset chips */}
+                    <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                      {[5, 10, 15, 20, 25, 30].map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => {
+                            setSeconds(s)
+                            setCustomDurationInput(`${s}s`)
+                            setShowDurationMenu(false)
+                          }}
+                          className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-all ${
+                            seconds === s
+                              ? 'bg-[#e5ff00]/20 text-[#e5ff00] border border-[#e5ff00]/40 font-bold'
+                              : 'bg-white/[0.06] text-zinc-400 hover:text-white hover:bg-white/10'
+                          }`}
+                        >
+                          {s}s
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  /* List of supported durations (Omni Flash: 5s, 10s; Seedance 2.0 Fast: 5s, 10s, 15s; Veo 3.1: 4s, 6s, 8s) */
+                  <div className="flex flex-col gap-1 min-w-[170px]">
+                    {(currentModel?.durations || [5]).map(sec => (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => {
+                          setSeconds(sec)
+                          setShowDurationMenu(false)
+                        }}
+                        className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                          seconds === sec
+                            ? 'bg-white/10 text-[#e5ff00] font-bold border border-[#e5ff00]/50 shadow-[0_0_12px_rgba(229,255,0,0.15)]'
+                            : 'hover:bg-white/[0.08] text-zinc-300 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Clock className={`w-3.5 h-3.5 ${seconds === sec ? 'text-[#e5ff00]' : 'text-zinc-400'}`} />
+                          <span>{sec} giây</span>
+                        </div>
+                        <span className="text-[10px] text-zinc-400 font-mono">{sec}s</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -543,13 +664,10 @@ export default function DockControls({
           onGenerate()
         }}
         disabled={isGenerating}
-        className="px-5 py-2 rounded-2xl bg-[#e5ff00] hover:bg-[#d6f000] text-black font-black transition-all shadow-[0_0_20px_rgba(229,255,0,0.3)] hover:shadow-[0_0_30px_rgba(229,255,0,0.55)] active:scale-[0.98] disabled:opacity-50 flex flex-col items-center justify-center shrink-0 min-w-[105px]"
+        className="px-5 py-2.5 rounded-2xl bg-[#e5ff00] hover:bg-[#d6f000] text-black font-black transition-all shadow-[0_0_20px_rgba(229,255,0,0.3)] hover:shadow-[0_0_30px_rgba(229,255,0,0.55)] active:scale-[0.98] disabled:opacity-50 flex items-center justify-center shrink-0 min-w-[105px]"
       >
         <span className="text-xs uppercase tracking-wider font-extrabold leading-tight">
           {isGenerating ? (isImageMode ? 'GENERATING...' : 'RENDERING...') : 'GENERATE'}
-        </span>
-        <span className="text-[10px] font-bold text-black/80 flex items-center gap-0.5">
-          ✦ {currentCost.toLocaleString('vi-VN')}đ
         </span>
       </button>
     </div>
