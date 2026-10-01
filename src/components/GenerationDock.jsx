@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import { Film, Image as ImageIcon, Sparkles, X, Upload } from 'lucide-react'
 import DockControls from './DockControls'
 import { INSPIRATION_PROMPTS, IMAGE_INSPIRATION_PROMPTS } from '../constants/models'
+import { uploadToBlob } from '../services/blobStorage'
 
 export default function GenerationDock({
   mode = 'video',
@@ -62,7 +63,7 @@ export default function GenerationDock({
   }, [])
 
   // Handle image paste from clipboard (Ctrl+V)
-  const handlePaste = (e) => {
+  const handlePaste = async (e) => {
     const items = e.clipboardData?.items
     if (!items) return
 
@@ -72,14 +73,15 @@ export default function GenerationDock({
         e.preventDefault()
         const file = item.getAsFile()
         if (file) {
-          const reader = new FileReader()
-          reader.onload = (event) => {
-            const base64Url = event.target.result
+          try {
+            const { blobUrl, pathname } = await uploadToBlob(file)
             if (onAddReferenceImage) {
-              onAddReferenceImage(base64Url)
+              onAddReferenceImage(blobUrl, pathname, file.name || 'Pasted Image')
             }
+          } catch (error) {
+            console.error('Upload error:', error)
+            alert(`Lỗi upload ảnh dán: ${error.message}`)
           }
-          reader.readAsDataURL(file)
         }
         break
       }
@@ -190,14 +192,16 @@ export default function GenerationDock({
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={(e) => {
+        onChange={async (e) => {
           const file = e.target.files?.[0]
           if (file) {
-            const reader = new FileReader()
-            reader.onload = (event) => {
-              onAddReferenceImage?.(event.target.result)
+            try {
+              const { blobUrl, pathname } = await uploadToBlob(file)
+              onAddReferenceImage?.(blobUrl, pathname, file.name)
+            } catch (error) {
+              console.error('Upload error:', error)
+              alert(`Lỗi upload ảnh: ${error.message}`)
             }
-            reader.readAsDataURL(file)
           }
           e.target.value = ''
         }}
