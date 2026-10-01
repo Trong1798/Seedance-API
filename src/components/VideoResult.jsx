@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Download, Copy, Check, ExternalLink, Sparkles, X, Share2, Film, Loader2, RefreshCw, AlertCircle, Terminal, Code2 } from 'lucide-react'
-import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage } from '../services/api'
+import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab } from '../services/api'
 import { getApiKey } from '../services/storage'
 
 export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
@@ -127,33 +127,12 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
     }
   }
 
+  const targetUrl = isImage ? (cleanUrl || video.url) : (activePlayUrl || directUrl || cleanUrl)
+  const isDataOrBlobUrl = Boolean(targetUrl && (targetUrl.startsWith('data:') || targetUrl.startsWith('blob:')))
+
   const handleOpenNewTab = (e) => {
-    const targetUrl = isImage ? (cleanUrl || video.url) : (activePlayUrl || directUrl || cleanUrl)
-    if (!targetUrl) return
-
-    if (targetUrl.startsWith('data:')) {
-      if (e) e.preventDefault()
-      try {
-        const arr = targetUrl.split(',')
-        const mime = arr[0].match(/:(.*?);/)[1]
-        const bstr = atob(arr[1])
-        let n = bstr.length
-        const u8arr = new Uint8Array(n)
-        while (n--) {
-          u8arr[n] = bstr.charCodeAt(n)
-        }
-        const blob = new Blob([u8arr], { type: mime })
-        const blobUrlGenerated = URL.createObjectURL(blob)
-        window.open(blobUrlGenerated, '_blank')
-        return
-      } catch (err) {
-        console.error('Failed to create blob from dataUrl', err)
-      }
-    }
-
-    if (!e) {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer')
-    }
+    if (e) e.preventDefault()
+    openMediaInNewTab(targetUrl, video?.prompt ? `Seedance - ${video.prompt.slice(0, 30)}...` : (isImage ? 'Seedance Image' : 'Seedance Video'))
   }
 
   const pythonSnippet = isImage
@@ -344,9 +323,9 @@ print("Tải video thành công!")`
           </button>
 
           <a
-            href={isImage ? (cleanUrl || video.url) : (activePlayUrl || directUrl || cleanUrl)}
-            target="_blank"
-            rel="noopener noreferrer"
+            href={isDataOrBlobUrl ? '#' : (targetUrl || '#')}
+            target={isDataOrBlobUrl ? undefined : '_blank'}
+            rel={isDataOrBlobUrl ? undefined : 'noopener noreferrer'}
             onClick={handleOpenNewTab}
             className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
             title="Mở trên tab mới (trình duyệt hỗ trợ xem và lưu trực tiếp)"

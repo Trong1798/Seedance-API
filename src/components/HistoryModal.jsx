@@ -1,6 +1,6 @@
 import React from 'react'
 import { History, X, Download, Copy, Trash2, Film, Image as ImageIcon, ExternalLink, Play } from 'lucide-react'
-import { getDirectVideoUrl, getDirectImageUrl, isMediaImage } from '../services/api'
+import { getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab } from '../services/api'
 
 export default function HistoryModal({
   isOpen,
@@ -12,31 +12,6 @@ export default function HistoryModal({
   apiKey,
 }) {
   if (!isOpen) return null
-
-  const openMediaTab = (targetUrl, isImg) => {
-    if (!targetUrl) return
-
-    if (targetUrl.startsWith('data:')) {
-      try {
-        const arr = targetUrl.split(',')
-        const mime = arr[0].match(/:(.*?);/)[1]
-        const bstr = atob(arr[1])
-        let n = bstr.length
-        const u8arr = new Uint8Array(n)
-        while (n--) {
-          u8arr[n] = bstr.charCodeAt(n)
-        }
-        const blob = new Blob([u8arr], { type: mime })
-        const blobUrl = URL.createObjectURL(blob)
-        window.open(blobUrl, '_blank')
-        return
-      } catch {
-        // Fallback below
-      }
-    }
-
-    window.open(targetUrl, '_blank', 'noopener,noreferrer')
-  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -84,6 +59,7 @@ export default function HistoryModal({
               const directTargetUrl = isImg
                 ? cleanImgUrl
                 : getDirectVideoUrl(vid.url, apiKey)
+              const isDataOrBlob = Boolean(directTargetUrl && (directTargetUrl.startsWith('data:') || directTargetUrl.startsWith('blob:')))
 
               return (
                 <div
@@ -137,18 +113,21 @@ export default function HistoryModal({
                       {isImg ? <ImageIcon className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
                     </button>
                     <a
-                      href={directTargetUrl || '#'}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                      href={isDataOrBlob ? '#' : (directTargetUrl || '#')}
+                      target={isDataOrBlob ? undefined : '_blank'}
+                      rel={isDataOrBlob ? undefined : 'noopener noreferrer'}
                       onClick={(e) => {
                         if (!directTargetUrl) {
                           e.preventDefault()
                           return
                         }
-                        if (directTargetUrl.startsWith('data:')) {
+                        if (isDataOrBlob) {
                           e.preventDefault()
-                          openMediaTab(directTargetUrl, isImg)
                         }
+                        openMediaInNewTab(
+                          directTargetUrl,
+                          vid.prompt ? `Seedance - ${vid.prompt.slice(0, 30)}...` : (isImg ? 'Seedance Image' : 'Seedance Video')
+                        )
                       }}
                       className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition cursor-pointer inline-flex items-center justify-center"
                       title={isImg ? "Mở ảnh trong tab mới" : "Mở video trong tab mới"}

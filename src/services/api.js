@@ -462,6 +462,7 @@ export async function generateImage({
     prompt: prompt.trim(),
     n: 1,
     size,
+    response_format: 'url',
   }
 
   if (hasReference) {
@@ -616,3 +617,136 @@ export async function testApiKey(apiKey, customBaseUrl) {
     return { success: false, message: 'Lỗi kiểm tra kết nối: ' + e.message }
   }
 }
+
+/**
+ * Safely open media in a new tab.
+ * For standard HTTP/HTTPS URLs, it uses standard browser navigation.
+ * For data: or blob: URLs, it creates an inline responsive viewer tab
+ * instead of navigating top frame to a 100,000+ character data URL,
+ * which modern browsers (Chrome/Edge/Brave) block or fail to render.
+ */
+export function openMediaInNewTab(url, title = 'Xem nội dung Media') {
+  if (!url) return
+
+  const isHttp = url.startsWith('http://') || url.startsWith('https://')
+  if (isHttp) {
+    window.open(url, '_blank', 'noopener,noreferrer')
+    return
+  }
+
+  // Open viewer window synchronously to prevent popup blocker
+  const newTab = window.open('', '_blank')
+  if (!newTab) {
+    // If pop-up is completely blocked, try fallback
+    window.open(url, '_blank')
+    return
+  }
+
+  const isVideo = url.startsWith('data:video') || url.includes('.mp4')
+  const safeTitle = (title || 'Xem nội dung Media').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+  const mediaHtml = isVideo
+    ? `<video src="${url}" controls autoplay playsinline style="max-width:100%;max-height:88vh;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.8);outline:none;"></video>`
+    : `<img id="previewImg" src="${url}" alt="${safeTitle}" style="max-width:100%;max-height:88vh;object-fit:contain;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,0.8);cursor:zoom-in;transition:transform 0.15s ease;" onclick="toggleZoom(this)" title="Bấm để phóng to / thu nhỏ" />`
+
+  const downloadFilename = isVideo ? `seedance-video-${Date.now()}.mp4` : `seedance-image-${Date.now()}.png`
+
+  newTab.document.write(`
+    <!DOCTYPE html>
+    <html lang="vi">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${safeTitle}</title>
+        <style>
+          * { box-sizing: border-box; margin: 0; padding: 0; }
+          body {
+            background-color: #09090b;
+            color: #f4f4f5;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 24px 16px 80px;
+            overflow-x: hidden;
+            overflow-y: auto;
+          }
+          .viewer-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            flex: 1;
+          }
+          .floating-bar {
+            position: fixed;
+            bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(24, 24, 27, 0.92);
+            border: 1px solid rgba(63, 63, 70, 0.6);
+            backdrop-filter: blur(12px);
+            padding: 8px 16px;
+            border-radius: 9999px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            z-index: 100;
+          }
+          .btn {
+            background: #27272a;
+            color: #f4f4f5;
+            padding: 7px 16px;
+            border-radius: 9999px;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+          }
+          .btn:hover {
+            background: #3f3f46;
+          }
+          .btn-primary {
+            background: #e5ff00;
+            color: #000;
+            font-weight: 700;
+          }
+          .btn-primary:hover {
+            background: #d4ee00;
+          }
+        </style>
+        <script>
+          var isZoomed = false;
+          function toggleZoom(img) {
+            isZoomed = !isZoomed;
+            if (isZoomed) {
+              img.style.maxHeight = 'none';
+              img.style.maxWidth = 'none';
+              img.style.cursor = 'zoom-out';
+            } else {
+              img.style.maxHeight = '88vh';
+              img.style.maxWidth = '100%';
+              img.style.cursor = 'zoom-in';
+            }
+          }
+        </script>
+      </head>
+      <body>
+        <div class="viewer-container">
+          ${mediaHtml}
+        </div>
+        <div class="floating-bar">
+          <a class="btn btn-primary" href="${url}" download="${downloadFilename}">⬇ Tải về</a>
+          <button class="btn" onclick="window.close()">Đóng tab</button>
+        </div>
+      </body>
+    </html>
+  `)
+  newTab.document.close()
+}
+
