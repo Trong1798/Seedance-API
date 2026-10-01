@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { Download, Copy, Check, ExternalLink, Sparkles, X, Share2, Film, Loader2, RefreshCw, AlertCircle, Terminal, Code2 } from 'lucide-react'
+import { Download, Copy, Check, ExternalLink, Sparkles, X, Share2, Film, Loader2, RefreshCw, AlertCircle, Terminal, Code2, Eye } from 'lucide-react'
 import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab } from '../services/api'
 import { getApiKey } from '../services/storage'
+import MediaLightbox from './MediaLightbox'
 
 export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
   const [copiedLink, setCopiedLink] = useState(false)
@@ -13,6 +14,7 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
   const [loadError, setLoadError] = useState(null)
   const [downloading, setDownloading] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
+  const [showLightbox, setShowLightbox] = useState(false)
 
   if (!video || !video.url) return null
 
@@ -322,17 +324,15 @@ print("Tải video thành công!")`
             <span>{copiedLink ? 'Đã copy link' : (isImage ? 'Copy link ảnh' : 'Copy link video (Key)')}</span>
           </button>
 
-          <a
-            href={isDataOrBlobUrl ? '#' : (targetUrl || '#')}
-            target={isDataOrBlobUrl ? undefined : '_blank'}
-            rel={isDataOrBlobUrl ? undefined : 'noopener noreferrer'}
-            onClick={handleOpenNewTab}
+          <button
+            type="button"
+            onClick={() => setShowLightbox(true)}
             className="px-3.5 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer"
-            title="Mở trên tab mới (trình duyệt hỗ trợ xem và lưu trực tiếp)"
+            title={isImage ? "Xem ảnh toàn màn hình (phóng to, xem chi tiết)" : "Xem video toàn màn hình"}
           >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span>Mở tab mới</span>
-          </a>
+            <Eye className="w-3.5 h-3.5 text-[#e5ff00]" />
+            <span>{isImage ? 'Xem ảnh' : 'Xem video'}</span>
+          </button>
 
           <button
             onClick={handleDownload}
@@ -348,6 +348,16 @@ print("Tải video thành công!")`
           </button>
         </div>
       </div>
+
+      {/* Fullscreen Media Lightbox */}
+      <MediaLightbox
+        isOpen={showLightbox}
+        onClose={() => setShowLightbox(false)}
+        mediaUrl={targetUrl}
+        isImage={isImage}
+        prompt={video.prompt}
+        onDownload={handleDownload}
+      />
     </div>
   )
 }

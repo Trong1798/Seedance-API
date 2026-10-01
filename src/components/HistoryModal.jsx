@@ -1,6 +1,7 @@
-import React from 'react'
-import { History, X, Download, Copy, Trash2, Film, Image as ImageIcon, ExternalLink, Play } from 'lucide-react'
-import { getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab } from '../services/api'
+import React, { useState } from 'react'
+import { History, X, Download, Copy, Trash2, Film, Image as ImageIcon, Play, Eye } from 'lucide-react'
+import { getDirectVideoUrl, getDirectImageUrl, isMediaImage } from '../services/api'
+import MediaLightbox from './MediaLightbox'
 
 export default function HistoryModal({
   isOpen,
@@ -11,6 +12,8 @@ export default function HistoryModal({
   onClearAll,
   apiKey,
 }) {
+  const [activeLightboxMedia, setActiveLightboxMedia] = useState(null)
+
   if (!isOpen) return null
 
   return (
@@ -112,28 +115,18 @@ export default function HistoryModal({
                     >
                       {isImg ? <ImageIcon className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5 fill-current" />}
                     </button>
-                    <a
-                      href={isDataOrBlob ? '#' : (directTargetUrl || '#')}
-                      target={isDataOrBlob ? undefined : '_blank'}
-                      rel={isDataOrBlob ? undefined : 'noopener noreferrer'}
-                      onClick={(e) => {
-                        if (!directTargetUrl) {
-                          e.preventDefault()
-                          return
-                        }
-                        if (isDataOrBlob) {
-                          e.preventDefault()
-                        }
-                        openMediaInNewTab(
-                          directTargetUrl,
-                          vid.prompt ? `Seedance - ${vid.prompt.slice(0, 30)}...` : (isImg ? 'Seedance Image' : 'Seedance Video')
-                        )
-                      }}
-                      className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white transition cursor-pointer inline-flex items-center justify-center"
-                      title={isImg ? "Mở ảnh trong tab mới" : "Mở video trong tab mới"}
+                    <button
+                      type="button"
+                      onClick={() => setActiveLightboxMedia({
+                        url: directTargetUrl || vid.url,
+                        isImage: isImg,
+                        prompt: vid.prompt,
+                      })}
+                      className="p-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-[#e5ff00] transition cursor-pointer inline-flex items-center justify-center"
+                      title={isImg ? "Xem ảnh chi tiết" : "Xem video toàn màn hình"}
                     >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(vid.prompt)
@@ -158,6 +151,17 @@ export default function HistoryModal({
           )}
         </div>
       </div>
+
+      {/* Fullscreen Media Lightbox */}
+      {activeLightboxMedia && (
+        <MediaLightbox
+          isOpen={Boolean(activeLightboxMedia)}
+          onClose={() => setActiveLightboxMedia(null)}
+          mediaUrl={activeLightboxMedia.url}
+          isImage={activeLightboxMedia.isImage}
+          prompt={activeLightboxMedia.prompt}
+        />
+      )}
     </div>
   )
 }
