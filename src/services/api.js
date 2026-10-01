@@ -245,6 +245,7 @@ export async function generateVideo({
   seconds = 10,
   size = '1280x720',
   referenceImage = null,
+  referenceImages = null,
   signal = null,
   onHeartbeat = null,
 }) {
@@ -270,9 +271,17 @@ export async function generateVideo({
     size,
   }
 
-  if (referenceImage && referenceImage.trim()) {
+  const refUrl = (() => {
+    if (referenceImages && referenceImages.length > 0) {
+      const selected = referenceImages.find(i => i.selected)
+      return selected ? selected.url : referenceImages[0].url
+    }
+    return (typeof referenceImage === 'string' && referenceImage.trim()) ? referenceImage.trim() : null
+  })()
+
+  if (refUrl && refUrl.trim()) {
     payload.input_reference = {
-      image_url: referenceImage.trim()
+      image_url: refUrl.trim()
     }
   }
 
@@ -439,6 +448,7 @@ export async function generateImage({
   prompt,
   size = '1024x1024',
   referenceImage = null,
+  referenceImages = null,
   signal = null,
   onHeartbeat = null,
 }) {
@@ -454,7 +464,11 @@ export async function generateImage({
   const rawBaseUrl = getBaseUrl() || 'https://tuansuapi.store/v1'
   const cleanBase = rawBaseUrl.replace(/\/+$/, '')
 
-  const hasReference = Boolean(referenceImage && referenceImage.trim())
+  const imageList = Array.isArray(referenceImages) && referenceImages.length > 0
+    ? referenceImages.map(img => (typeof img === 'string' ? img : img.url)?.trim()).filter(Boolean)
+    : (referenceImage && referenceImage.trim() ? [referenceImage.trim()] : [])
+
+  const hasReference = imageList.length > 0
   const endpoint = hasReference ? `${cleanBase}/images/edits` : `${cleanBase}/images/generations`
 
   const payload = {
@@ -466,7 +480,7 @@ export async function generateImage({
   }
 
   if (hasReference) {
-    payload.image = referenceImage.trim()
+    payload.image = imageList.length > 1 ? imageList : imageList[0]
   }
 
   if (onHeartbeat) {

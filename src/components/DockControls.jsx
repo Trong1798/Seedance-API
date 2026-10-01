@@ -82,7 +82,9 @@ export default function DockControls({
   resolution,
   setResolution,
   referenceImage,
+  referenceImages = [],
   onOpenReferenceModal,
+  onTriggerMention,
   onGenerate,
   isGenerating,
   hasApiKey,
@@ -227,15 +229,12 @@ export default function DockControls({
           <Plus className="w-4 h-4" />
         </button>
 
-        {/* Random Inspiration Prompt */}
+        {/* Reference Mention Button (@) */}
         <button
           type="button"
-          onClick={() => {
-            const list = isImageMode ? IMAGE_INSPIRATION_PROMPTS : INSPIRATION_PROMPTS
-            onSelectSamplePrompt(list[Math.floor(Math.random() * list.length)])
-          }}
+          onClick={onTriggerMention}
           className="p-2 rounded-xl glass-pill text-zinc-300 hover:text-[#e5ff00] transition-all"
-          title="Gợi ý prompt ngẫu nhiên"
+          title="Gán thẻ ảnh tham chiếu (@Image 1)"
         >
           <AtSign className="w-4 h-4" />
         </button>
@@ -326,20 +325,23 @@ export default function DockControls({
           )}
         </div>
 
-        {/* Reference Image Button */}
+        {/* References Button */}
         <button
           type="button"
           onClick={onOpenReferenceModal}
-          className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all ${
-            referenceImage
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all ${
+            (referenceImages?.length > 0 || referenceImage)
               ? 'glass-pill-active'
               : 'glass-pill text-zinc-300'
           }`}
-          title={isImageMode ? 'Gắn ảnh tham chiếu hoặc ảnh gốc để chỉnh sửa / ghép ảnh' : 'Ảnh tham chiếu (Image-to-Video)'}
+          title={isImageMode ? 'Ảnh tham chiếu (Edit / Ghép ảnh)' : 'Ảnh tham chiếu (Image-to-Video)'}
         >
           {isImageMode ? <ImageIcon className="w-3.5 h-3.5" /> : <Film className="w-3.5 h-3.5" />}
-          <span>Ref</span>
-          {referenceImage && <span className="w-1.5 h-1.5 rounded-full bg-[#e5ff00]" />}
+          <span>References</span>
+          <ChevronDown className="w-3 h-3 text-zinc-400" />
+          {(referenceImages?.length > 0 || referenceImage) && (
+            <span className="w-1.5 h-1.5 rounded-full bg-[#e5ff00]" />
+          )}
         </button>
 
         {/* Aspect Ratio Popover */}

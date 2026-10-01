@@ -9,6 +9,7 @@ import ReferenceModal from './components/ReferenceModal'
 import HistoryModal from './components/HistoryModal'
 import { getApiKey, getSavedVideos, saveVideoToHistory, removeVideoFromHistory } from './services/storage'
 import { generateVideo, generateImage } from './services/api'
+import { deleteFromBlob } from './services/blobStorage'
 import { VIDEO_MODELS, IMAGE_MODELS, ASPECT_RATIOS, IMAGE_ASPECT_RATIOS } from './constants/models'
 import { AlertCircle } from 'lucide-react'
 
@@ -21,6 +22,7 @@ export default function App() {
   const [aspectRatio, setAspectRatio] = useState('16:9')
   const [resolution, setResolution] = useState('720p')
   const [referenceImage, setReferenceImage] = useState(null)
+  const [referenceImages, setReferenceImages] = useState([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeVideo, setActiveVideo] = useState(null)
   const [savedVideos, setSavedVideos] = useState([])
@@ -65,6 +67,47 @@ export default function App() {
         setAspectRatio(targetModel?.defaultRatio || '16:9')
       }
     }
+  }
+
+  const handleAddReferenceImage = (url, pathname, customName) => {
+    setReferenceImages(prev => {
+      const nextNum = prev.length + 1
+      const name = customName || `Image ${nextNum}`
+      const newImg = {
+        id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name,
+        url,
+        pathname, // Store pathname for Vercel Blob deletion
+        selected: prev.length === 0, // Auto-select first image
+      }
+      const updated = [...prev, newImg]
+      if (updated.length === 1) {
+        setReferenceImage(updated[0].url)
+      }
+      return updated
+    })
+  }
+
+  const handleRemoveReferenceImage = (idOrIndex) => {
+    setReferenceImages(prev => {
+      let nextList
+      if (typeof idOrIndex === 'number') {
+        nextList = prev.filter((_, idx) => idx !== idOrIndex)
+      } else {
+        nextList = prev.filter(img => img.id !== idOrIndex)
+      }
+      const reindexed = nextList.map((img, idx) => ({
+        ...img,
+        name: `Image ${idx + 1}`
+      }))
+      setReferenceImage(reindexed[0]?.url || null)
+      return reindexed
+    })
+  }
+
+  const handleClearReferenceImages = () => {
+    setReferenceImages([])
+    setReferenceImage(null)
   }
 
   const handleGenerate = async () => {
@@ -113,6 +156,7 @@ export default function App() {
           prompt,
           size,
           referenceImage,
+          referenceImages,
           signal: controller.signal,
           onHeartbeat: (hb) => {
             setHeartbeatCount(prev => prev + 1)
@@ -141,6 +185,7 @@ export default function App() {
           seconds,
           size,
           referenceImage,
+          referenceImages,
           signal: controller.signal,
           onHeartbeat: (hb) => {
             setHeartbeatCount(prev => prev + 1)
@@ -190,8 +235,11 @@ export default function App() {
             aspectRatio={aspectRatio} setAspectRatio={setAspectRatio}
             resolution={resolution} setResolution={setResolution}
             referenceImage={referenceImage}
+            referenceImages={referenceImages}
             onOpenReferenceModal={() => setShowReferenceModal(true)}
-            onRemoveReferenceImage={() => setReferenceImage(null)}
+            onRemoveReferenceImage={handleRemoveReferenceImage}
+            onAddReferenceImage={handleAddReferenceImage}
+            onClearReferenceImages={handleClearReferenceImages}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
             hasApiKey={Boolean(apiKey)}
@@ -248,9 +296,27 @@ export default function App() {
       <ReferenceModal
         isOpen={showReferenceModal}
         onClose={() => setShowReferenceModal(false)}
-        referenceImage={referenceImage}
-        onSelectImage={img => setReferenceImage(img)}
-        onRemoveImage={() => setReferenceImage(null)}
+        referenceImages={referenceImages}
+        onAddImage={handleAddReferenceImage}
+        onToggleSelect={(id) => {
+          setReferenceImages(prev => {
+            const updated = prev.map(img => img.id === id ? { ...img, selected: !img.selected } : img)
+            setReferenceImage(updated.find(i => i.selected)?.url || null)
+            return updated
+          })
+        }}
+        onDeleteImage={async (id) => {
+          const target = referenceImages.find(i => i.id === id)
+          if (!target) return
+          if (target.pathname) {
+            await deleteFromBlob(target.pathname)
+          }
+          setReferenceImages(prev => {
+            const updated = prev.filter(i => i.id !== id)
+            setReferenceImage(updated.find(i => i.selected)?.url || null)
+            return updated
+          })
+        }}
       />
 
       <HistoryModal
