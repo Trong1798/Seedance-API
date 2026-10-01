@@ -1,0 +1,773 @@
+================================================================================
+           TÀI LIỆU KỸ THUẬT HƯỚNG DẪN KẾT NỐI VÀ TÍCH HỢP HỆ THỐNG API
+                      (TUAN SU API STORE - PHIÊN BẢN V2.0)
+================================================================================
+
+Chào mừng bạn đến với hệ thống API Store. Toàn bộ API của hệ thống được chuẩn hóa
+tương thích 100% theo định dạng OpenAI API và Anthropic API, hỗ trợ Streaming,
+Tool Calling, Vision (đọc ảnh), Image Generation (tạo ảnh), Image Edits (sửa ảnh,
+ghép nhiều ảnh tham chiếu) và Mua tài nguyên tự động.
+
+================================================================================
+PHẦN 1: THÔNG TIN ENDPOINT & BASE URL KẾT NỐI
+================================================================================
+
+Hệ thống cung cấp 2 Tunnel / Base URL tốc độ cao qua Cloudflare:
+
+1.1. CỔNG CHÍNH (MAIN ROUTE) - Dùng cho đa số các Model:
+     • Base URL: https://tuansuapi.store/v1
+     • Hỗ trợ: Claude (Fable 5, Opus 4.8, Sonnet 5, Opus 5), DeepSeek (Flash 4.1, Pro, Vision),
+               Qwen 3.8, GLM 5.3, Kimi K3, Gemini Image...
+
+1.2. CỔNG RIÊNG (GPT-5.6 DEDICATED TUNNEL 2):
+     • Base URL: https://router.danlapkythuattonghop-hanoi.com.vn/v1
+     • Hỗ trợ: Dòng GPT-5.6 (Luna, Terra, Sol), GPT-6-Astra và Claude CCmax.
+
+* Xác thực (Authentication):
+  - Header bắt buộc: Authorization: Bearer <API_KEY_CỦA_BẠN>
+  - Hoặc header riêng cho Claude: x-api-key: <API_KEY_CỦA_BẠN>
+  - Content-Type: application/json
+
+• Cổng Web Check Usage & Nạp tiền:
+  - https://tuansuapi.store/portal  (hoặc https://router.danlapkythuattonghop-hanoi.com.vn/key)
+  (Tra cứu 5 chỉ số KPI, lịch sử từng request In/Cache/Out/Chi phí, nạp VietQR tự động)
+
+• Quản lý qua Bot Telegram: Menu "API CỦA TÔI" hoặc "VÍ & SỐ DƯ".
+• Hỗ trợ kỹ thuật 24/7: Admin Telegram: @tuansu_28
+
+================================================================================
+PHẦN 2: DANH MỤC MODEL CHÍNH & BẢNG GIÁ THAM KHẢO
+================================================================================
+
+1. DÒNG SUY LUẬN & LẬP TRÌNH CHUYÊN SÂU (GPT & DEEPSEEK):
+   • Dòng GPT Mới (Gọi qua URL Tunnel 2: https://router.danlapkythuattonghop-hanoi.com.vn/v1):
+     - gpt-5.6-luna                : Giá 550đ In / 600đ Out (1M token) | Cache hit 110đ (Tối thiểu 5đ/req)
+     - gpt-5.6-terra               : Giá 900đ In / 900đ Out (1M token) | Cache hit 180đ (Tối thiểu 8đ/req)
+     - gpt-5.6-sol                 : Giá 1500đ In / 1500đ Out (1M token) | Cache hit 300đ (Tối thiểu 12đ/req)
+     - gpt-6-astra                 : Giá 2300đ In / 2300đ Out (1M token) | Cache hit 460đ (Tối thiểu 20đ/req)
+     * ƯU ĐÃI ĐẶC BIỆT: Nạp từ 500.000đ giảm 50đ/1M In và Out cho cả 4 model GPT trong tuần đầu!
+   • Các model khác (Gọi qua URL chung: https://tuansuapi.store/v1):
+     - deepseek-v4.1-flash         : Bản Flash siêu nhanh, hỗ trợ prefix cache token siêu rẻ.
+     - deepseek-v4-pro-0813        : Bản Pro lập trình, viết code và giải thuật chuyên sâu.
+     - deepseek-v4-flash-vision-exp: Nhìn và đọc hiểu hình ảnh (Multimodal Vision).
+     - qwen3.8-flash, glm-5.3      : Tốc độ cao, đa năng.
+
+2. DÒNG CLAUDE CAO CẤP:
+   • claude-sonnet-5 / claude-sonnet-5-ccmax: Tốc độ cao, viết code và phân tích sắc bén.
+   • claude-opus-4-8 / claude-opus-4-8-ccmax: Viết code, tư duy logic và suy luận sâu.
+   • claude-opus-5 / claude-opus-5-ccmax    : Model thông minh nhất, Extended Thinking cực sâu.
+   • claude-fable-5-ts                      : Phiên bản tối ưu chi phí theo lượt gọi.
+
+3. DÒNG VẼ & XỬ LÝ ẢNH (IMAGE AI):
+   • gpt-image-2                 : Tạo ảnh siêu nét 1024x1024, hỗ trợ sửa ảnh và GHÉP 2+ ẢNH THAM CHIẾU.
+   • gpt-image-2.5-flare         : Dòng Flare ánh sáng rực rỡ, nghệ thuật.
+   • gpt-image-2.5-sunburst      : Dòng Sunburst điện ảnh chân thực, chi tiết cao.
+   • gemini-3.1-flash-image-preview (nanobanana 2): Nanobanana 2 tốc độ cực nhanh, hỗ trợ tham chiếu.
+
+4. DÒNG TẠO VIDEO AI (VIDEO GENERATION - /v1/videos):
+   • seedance_2.0_fast           : Tốc độ render cực nhanh, giá rẻ (5s: 1.100đ · 10s: 2.100đ · 15s: 3.400đ)
+   • seedance_2.5                : Chất lượng cao, hỗ trợ video dài đến 30s (5s: 1.300đ · 10s: 2.400đ · 15s: 3.500đ · 20-30s: 6.000đ)
+   • Veo-3.1                     : Model video cao cấp Google DeepMind Veo (1.400đ/video)
+   • gemini-omni-flash-preview   : Google Omni Flash (2.200đ/video)
+
+================================================================================
+PHẦN 3: MẪU CODE GỌI API CHAT / SUY LUẬN (TEXT & CODE)
+================================================================================
+
+Endpoint: POST https://tuansuapi.store/v1/chat/completions
+(Hoặc https://router.danlapkythuattonghop-hanoi.com.vn/v1/chat/completions cho dòng GPT)
+
+3.1. cURL (Streaming):
+curl -X POST "https://router.danlapkythuattonghop-hanoi.com.vn/v1/chat/completions" \
+  -H "Authorization: Bearer <API_KEY_CỦA_BẠN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-5.6-luna",
+    "messages": [
+      {"role": "system", "content": "Bạn là trợ lý AI chuyên nghiệp."},
+      {"role": "user", "content": "Viết thuật toán QuickSort bằng Python ngắn gọn kèm giải thích."}
+    ],
+    "stream": true
+  }'
+
+3.2. Python (Dùng thư viện chính thức openai):
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-9r-xxxx",
+    base_url="https://router.danlapkythuattonghop-hanoi.com.vn/v1"
+)
+
+response = client.chat.completions.create(
+    model="gpt-5.6-luna",
+    messages=[
+        {"role": "system", "content": "Bạn là lập trình viên chuyên nghiệp."},
+        {"role": "user", "content": "Giải thích Decorator trong Python kèm ví dụ."}
+    ],
+    stream=True
+)
+
+for chunk in response:
+    content = chunk.choices[0].delta.content or ""
+    print(content, end="", flush=True)
+print()
+```
+
+3.3. Python (Dùng thư viện requests tiêu chuẩn):
+```python
+import requests
+import json
+
+URL = "https://tuansuapi.store/v1/chat/completions"
+headers = {
+    "Authorization": "Bearer <API_KEY_CỦA_BẠN>",
+    "Content-Type": "application/json"
+}
+payload = {
+    "model": "deepseek-v4.1-flash",
+    "messages": [{"role": "user", "content": "Giải bài toán tháp Hà Nội với 4 đĩa."}],
+    "stream": True
+}
+
+response = requests.post(URL, headers=headers, json=payload, stream=True)
+for line in response.iter_lines():
+    if line:
+        decoded = line.decode('utf-8')
+        if decoded.startswith("data: ") and decoded != "data: [DONE]":
+            chunk = json.loads(decoded[6:])
+            content = chunk["choices"][0]["delta"].get("content", "")
+            print(content, end="", flush=True)
+print()
+```
+
+================================================================================
+PHẦN 4: MẪU CODE GỌI VISION (PHÂN TÍCH VÀ ĐỌC HÌNH ẢNH)
+================================================================================
+
+Lưu ý quan trọng: Nên truyền ảnh dưới dạng Base64 Data URL (data:image/png;base64,...).
+Kích thước ảnh tối thiểu 16x16 px.
+
+Mẫu code Python hoàn chỉnh:
+```python
+import base64
+from openai import OpenAI
+
+with open("anh_can_doc.png", "rb") as f:
+    b64_img = base64.b64encode(f.read()).decode("utf-8")
+
+client = OpenAI(
+    api_key="sk-9r-xxxx",
+    base_url="https://tuansuapi.store/v1"
+)
+
+res = client.chat.completions.create(
+    model="deepseek-v4-flash-vision-exp",  # hoặc claude-sonnet-5-ccmax
+    messages=[{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": "Hãy đọc và phân tích chi tiết hình ảnh này:"},
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64_img}"}}
+        ]
+    }],
+    max_tokens=1000
+)
+
+print(res.choices[0].message.content)
+```
+
+================================================================================
+PHẦN 5: HƯỚNG DẪN TẠO ẢNH TỪ VĂN BẢN (KHÔNG CÓ ẢNH THAM CHIẾU)
+================================================================================
+Sử dụng khi bạn muốn vẽ một bức ảnh hoàn toàn mới chỉ từ câu lệnh mô tả (Prompt).
+
+1. ENDPOINT:
+   POST https://tuansuapi.store/v1/images/generations
+
+2. CÁC THAM SỐ CHÍNH (BODY JSON):
+   - model: "gpt-image-2" (hoặc "gpt-image-2.5-flare", "gemini-3.1-flash-image-preview")
+   - prompt: "Câu mô tả chi tiết hình ảnh bạn muốn tạo..."
+   - n: 1 (số lượng ảnh tạo ra)
+   - size: "1024x1024" (hoặc "1024x1792" ảnh dọc, "1792x1024" ảnh ngang)
+   - response_format: "url" (trả về link tải ảnh) HOẶC "b64_json" (trả về chuỗi base64)
+
+3. MẪU REQUEST cURL:
+curl -X POST https://tuansuapi.store/v1/images/generations \
+  -H "Authorization: Bearer <API_KEY_CỦA_BẠN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "Một chú rồng nhỏ dễ thương phong cách 3D Pixar, nền rừng tuyết lung linh, 8k",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+
+Phản hồi mẫu từ API:
+{
+  "created": 1789634367,
+  "data": [
+    {
+      "url": "https://img.apimatou.cc/i/example_image_123.png",
+      "revised_prompt": "Một chú rồng nhỏ dễ thương..."
+    }
+  ]
+}
+
+4. CODE PYTHON HOÀN CHỈNH TỰ ĐỘNG TẢI VÀ LƯU ẢNH:
+```python
+import requests
+
+API_KEY = "sk-9r-xxxx"
+URL = "https://tuansuapi.store/v1/images/generations"
+
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+payload = {
+    "model": "gpt-image-2",
+    "prompt": "Cyberpunk city night view, neon lights, ultra realistic 8k, cinematic lighting",
+    "n": 1,
+    "size": "1024x1024"
+}
+
+response = requests.post(URL, headers=headers, json=payload, timeout=60)
+result = response.json()
+
+if "data" in result and len(result["data"]) > 0:
+    item = result["data"][0]
+    if "url" in item:
+        img_url = item["url"]
+        print(f"Ảnh đã tạo thành công: {img_url}")
+        img_data = requests.get(img_url).content
+        with open("anh_tao_moi.png", "wb") as f:
+            f.write(img_data)
+        print("Đã lưu vào file anh_tao_moi.png")
+    elif "b64_json" in item:
+        import base64
+        img_bytes = base64.b64decode(item["b64_json"])
+        with open("anh_tao_moi.png", "wb") as f:
+            f.write(img_bytes)
+        print("Đã lưu ảnh từ base64 vào file anh_tao_moi.png")
+else:
+    print("Lỗi tạo ảnh:", result)
+```
+
+================================================================================
+PHẦN 6: HƯỚNG DẪN SỬA ẢNH (CÓ 1 ẢNH THAM CHIẾU - IMAGE-TO-IMAGE)
+================================================================================
+Sử dụng khi bạn đã có 1 bức ảnh gốc và muốn:
+- Thay đổi trang phục, màu tóc, khuôn mặt của nhân vật.
+- Thay đổi bối cảnh đằng sau (từ phòng khách ra bãi biển, vũ trụ...).
+- Chuyển đổi phong cách (từ ảnh chụp thật sang phong cách anime/hoạt hình 3D/sơn dầu).
+
+1. ENDPOINT:
+   POST https://tuansuapi.store/v1/images/edits
+
+2. CÁCH 1: GỬI QUA JSON DATA URL (KHUYÊN DÙNG, TIỆN DỤNG NHẤT):
+Ảnh gốc được mã hóa thành dạng Base64 Data URL: "data:image/png;base64,iVBORw0KGgo..."
+
+Ví dụ cURL:
+curl -X POST https://tuansuapi.store/v1/images/edits \
+  -H "Authorization: Bearer <API_KEY_CỦA_BẠN>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-image-2",
+    "prompt": "Chuyển nhân vật trong bức ảnh này sang phong cách tranh sơn dầu cổ điển",
+    "image": "data:image/png;base64,<CHUỖI_BASE64_ẢNH_GỐC>",
+    "n": 1,
+    "size": "1024x1024"
+  }'
+
+3. CÁCH 2: GỬI MULTIPART FORM-DATA (UPLOAD FILE TRỰC TIẾP):
+curl -X POST https://tuansuapi.store/v1/images/edits \
+  -H "Authorization: Bearer <API_KEY_CỦA_BẠN>" \
+  -F "model=gpt-image-2" \
+  -F "prompt=Thêm một chiếc kính râm phong cách ngầu cho nhân vật" \
+  -F "image=@anh_goc.png;type=image/png" \
+  -F "size=1024x1024"
+
+4. CODE PYTHON HOÀN CHỈNH SỬA ẢNH TỪ FILE CÓ SẴN TRONG MÁY:
+```python
+import requests
+import base64
+
+API_KEY = "sk-9r-xxxx"
+URL = "https://tuansuapi.store/v1/images/edits"
+
+def file_to_data_uri(path):
+    with open(path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    ext = path.split(".")[-1].lower()
+    mime = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+    return f"data:{mime};base64,{encoded}"
+
+anh_goc_uri = file_to_data_uri("anh_chan_dung.png")
+
+payload = {
+    "model": "gpt-image-2",
+    "prompt": "Giữ nguyên nét mặt nhân vật, thay đổi nền phía sau thành quán cà phê vintage ngập nắng",
+    "image": anh_goc_uri,
+    "size": "1024x1024"
+}
+
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+res = requests.post(URL, headers=headers, json=payload, timeout=90)
+data = res.json()
+print("Kết quả:", data)
+```
+
+================================================================================
+PHẦN 7: HƯỚNG DẪN GHÉP & KẾT HỢP NHIỀU ẢNH THAM CHIẾU (2+ ẢNH)
+================================================================================
+ĐÂY LÀ TÍNH NĂNG CỰC KỲ MẠNH MẼ CỦA MODEL `gpt-image-2`:
+Bạn có thể truyền vào 2 (hoặc 3, 4) bức ảnh khác nhau để AI kết hợp:
+- Ảnh 1: Khuôn mặt hoặc nhân vật mẫu.
+- Ảnh 2: Bối cảnh, tư thế hoặc phong cách nghệ thuật mong muốn.
+-> AI sẽ trích xuất đặc trưng của cả 2 ảnh và kết hợp hài hòa ra bức ảnh mới!
+
+1. ENDPOINT:
+   POST https://tuansuapi.store/v1/images/edits
+
+2. ĐỊNH DẠNG BODY JSON:
+Truyền mảng danh sách các ảnh vào trường "image" hoặc "images":
+{
+  "model": "gpt-image-2",
+  "prompt": "Lấy nhân vật nữ từ ảnh thứ nhất, đặt vào khung cảnh lễ hội hoa anh đào từ ảnh thứ hai, phong cách điện ảnh sắc nét",
+  "image": [
+    "data:image/png;base64,<BASE64_ẢNH_1>",
+    "data:image/png;base64,<BASE64_ẢNH_2>"
+  ],
+  "size": "1024x1024"
+}
+*(Ghi chú: Gateway tự động hỗ trợ cả key "image": [...] lẫn "images": [...])*
+
+3. CODE PYTHON ĐẦY ĐỦ GHÉP 2 ẢNH THAM CHIẾU:
+```python
+import requests
+import base64
+
+API_KEY = "sk-9r-xxxx"
+URL = "https://tuansuapi.store/v1/images/edits"
+
+def image_to_base64_uri(file_path):
+    with open(file_path, "rb") as f:
+        b64 = base64.b64encode(f.read()).decode("utf-8")
+    ext = file_path.split(".")[-1].lower()
+    mime = "image/jpeg" if ext in ["jpg", "jpeg"] else "image/png"
+    return f"data:{mime};base64,{b64}"
+
+# Chuẩn bị 2 ảnh tham chiếu
+uri_nhan_vat = image_to_base64_uri("nhan_vat_mau.png")  # Ảnh 1: Nhân vật
+uri_boi_canh = image_to_base64_uri("boi_canh_mau.png")   # Ảnh 2: Bối cảnh / phong cách
+
+payload = {
+    "model": "gpt-image-2",
+    "prompt": "Kết hợp hài hòa hai bức ảnh tham chiếu: Đặt nhân vật ở ảnh thứ nhất vào bối cảnh vũ trụ ở ảnh thứ hai, giữ trọn vẹn đặc điểm trang phục và màu sắc",
+    "image": [uri_nhan_vat, uri_boi_canh],
+    "n": 1,
+    "size": "1024x1024"
+}
+
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+print("Đang gửi yêu cầu ghép 2 ảnh...")
+response = requests.post(URL, headers=headers, json=payload, timeout=120)
+res_data = response.json()
+
+if "data" in res_data and len(res_data["data"]) > 0:
+    item = res_data["data"][0]
+    if "url" in item:
+        print("Link ảnh kết quả:", item["url"])
+        with open("anh_ghep_ket_qua.png", "wb") as f:
+            f.write(requests.get(item["url"]).content)
+    elif "b64_json" in item:
+        with open("anh_ghep_ket_qua.png", "wb") as f:
+            f.write(base64.b64decode(item["b64_json"]))
+    print("✅ Đã lưu kết quả thành công vào file anh_ghep_ket_qua.png!")
+else:
+    print("❌ Thất bại:", res_data)
+```
+
+4. MẪU FORM-DATA NHIỀU FILE TRỰC TIẾP BẰNG PYTHON (REQUESTS):
+```python
+import requests
+
+files = [
+    ('image', ('ref1.png', open('anh1.png', 'rb'), 'image/png')),
+    ('image', ('ref2.png', open('anh2.png', 'rb'), 'image/png'))
+]
+data = {
+    'model': 'gpt-image-2',
+    'prompt': 'Kết hợp hai ảnh này lại thành tranh vẽ màu nước tuyệt đẹp',
+    'size': '1024x1024'
+}
+headers = {'Authorization': 'Bearer <API_KEY>'}
+
+res = requests.post("https://tuansuapi.store/v1/images/edits", headers=headers, data=data, files=files)
+print(res.json())
+```
+
+================================================================================
+================================================================================
+PHẦN 8: HƯỚNG DẪN TẠO VIDEO AI (TEXT-TO-VIDEO & IMAGE-TO-VIDEO)
+================================================================================
+
+Hệ thống hỗ trợ chuẩn OpenAI Videos API (`POST /v1/videos`) cho phép tạo video
+từ văn bản (Text-to-Video) hoặc tạo chuyển động từ hình ảnh (Image-to-Video).
+
+8.1. ENDPOINT & THÔNG TIN KẾT NỐI:
+• Endpoint tạo video: POST https://tuansuapi.store/v1/videos
+• Endpoint tra cứu / tải MP4: GET https://tuansuapi.store/v1/videos/{video_id}/content?variant=video
+• Header:
+  - Authorization: Bearer <API_KEY_CỦA_BẠN>
+  - Content-Type: application/json
+
+8.2. BẢNG THAM SỐ CẤU HÌNH VIDEO:
+--------------------------------------------------------------------------------
+Tham số          Kiểu       Bắt buộc  Ý nghĩa & Giá trị hợp lệ
+--------------------------------------------------------------------------------
+model            string     CÓ        Tên model:
+                                      • seedance_2.0_fast (cực nhanh, 5s-15s)
+                                      • seedance_2.5 (chất lượng cao, 5s-30s)
+                                      • Veo-3.1 (Google DeepMind Veo)
+                                      • gemini-omni-flash-preview (Omni Flash)
+prompt           string     CÓ        Nội dung mô tả video cần tạo (tiếng Anh/Việt)
+seconds          int/string KHÔNG     Thời lượng video:
+                                      • seedance_2.0_fast: 5, 10, 15 (mặc định: 5)
+                                      • seedance_2.5: 5, 10, 15, 20, 25, 30 (mặc định: 5)
+                                      • Veo-3.1: 4, 6, 8 (mặc định: 4)
+                                      • gemini-omni-flash-preview: 5
+size             string     KHÔNG     Độ phân giải & Tỉ lệ khung hình:
+                                      • 720x1280 (Mặc định: Dọc 9:16 TikTok/Reels/Shorts)
+                                      • 1280x720 (Ngang 16:9 YouTube/PC)
+                                      • 1024x1792 (Dọc nét cao)
+                                      • 1792x1024 (Ngang nét cao)
+input_reference  object     KHÔNG     (Image-to-Video) Ảnh tham chiếu đầu vào:
+                                      {"image_url": "https://link-anh.jpg"}
+--------------------------------------------------------------------------------
+
+8.3. BẢNG GIÁ CHI TIẾT THEO SỐ GIÂY (VNĐ):
+• Seedance 2 Fast: 5s: 1.100đ | 10s: 2.100đ | 15s: 3.400đ
+• Seedance 2.5   : 5s: 1.300đ | 10s: 2.400đ | 15s: 3.500đ | 20s/25s/30s: 6.000đ
+• Veo 3.1        : 1.400đ / video
+• Google Omni    : 2.200đ / video
+
+8.4. CƠ CHẾ GIỮ KẾT NỐI CLOUDFLARE TUNNEL (KEEPALIVE PING 25S):
+• Video AI cần render từ 2 đến 5 phút, trong khi Cloudflare sẽ tự ngắt kết nối
+  nếu không có dữ liệu sau 124 giây (lỗi 524 / 499).
+• Hệ thống Gateway đã tích hợp sẵn cơ chế phát xung dữ liệu giả (`\n`) mỗi 25s
+  vào đường hầm tunnel, giữ cho kết nối của bạn luôn hoạt động xuyên suốt.
+• LƯU Ý KHI LẬP TRÌNH: Hãy đặt `timeout` của thư viện HTTP từ 600s đến 900s
+  (ví dụ: `timeout=900` trong requests / axios / fetch).
+
+8.5. MẪU GỌI BẰNG CURL:
+
+a) Tạo video từ văn bản (Text-to-Video 10s màn ngang 16:9):
+curl -X POST "https://tuansuapi.store/v1/videos" \
+  -H "Authorization: Bearer sk-9r-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "seedance_2.5",
+    "prompt": "Cinematic drone shot flying through futuristic neon Tokyo at night, 4k",
+    "seconds": 10,
+    "size": "1280x720"
+  }'
+
+b) Tạo video từ ảnh có sẵn (Image-to-Video):
+curl -X POST "https://tuansuapi.store/v1/videos" \
+  -H "Authorization: Bearer sk-9r-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "seedance_2.0_fast",
+    "prompt": "The girl in the photo smiles gently and looks toward the camera",
+    "seconds": 5,
+    "size": "720x1280",
+    "input_reference": {
+      "image_url": "https://example.com/portrait.jpg"
+    }
+  }'
+
+8.6. MẪU GỌI BẰNG PYTHON (REQUESTS):
+```python
+import requests, json
+
+API_KEY = "sk-9r-xxxx"
+URL = "https://tuansuapi.store/v1/videos"
+
+payload = {
+    "model": "seedance_2.0_fast",
+    "prompt": "A cute Golden Retriever puppy running happily in autumn park, 4k",
+    "seconds": 5,
+    "size": "720x1280"
+}
+
+headers = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+print("Đang tạo video (Server giữ kết nối Cloudflare tự động)...")
+resp = requests.post(URL, headers=headers, json=payload, timeout=900)
+result = resp.json()
+
+print("Trạng thái:", result.get("status"))
+print("Link video MP4 trực tiếp:", result.get("url"))
+```
+
+8.7. MẪU GỌI BẰNG PYTHON (OPENAI SDK CHÍNH THỨC):
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-9r-xxxx",
+    base_url="https://tuansuapi.store/v1"
+)
+
+# 1. Tạo video và chờ hoàn thành tự động (create_and_poll)
+video = client.videos.create_and_poll(
+    model="seedance_2.5",
+    prompt="A majestic eagle soaring over snow-capped mountains",
+    seconds="10",
+    size="1280x720"
+)
+print("Video đã tạo xong, ID:", video.id)
+
+# 2. Tải trực tiếp file MP4 về máy
+content = client.videos.download_content(video.id)
+content.write_to_file("output.mp4")
+print("Đã lưu video thành công vào file output.mp4!")
+```
+
+8.8. MẪU GỌI BẰNG JAVASCRIPT / NODE.JS (FETCH):
+```javascript
+const API_KEY = "sk-9r-xxxx";
+
+async function generateVideo() {
+  const res = await fetch("https://tuansuapi.store/v1/videos", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "seedance_2.0_fast",
+      prompt: "A futuristic sports car speeding on rain-slicked highway at dusk",
+      seconds: 5,
+      size: "1280x720"
+    })
+  });
+  const data = await res.json();
+  console.log("Video URL:", data.url);
+}
+
+generateVideo();
+```
+
+================================================================================
+PHẦN 9: HƯỚNG DẪN DÙNG TRONG CÁC ỨNG DỤNG CHAT (KHÔNG CẦN CODE)
+================================================================================
+Nếu bạn sử dụng các phần mềm chat như NextChat, Cherry Studio, Chatbox, LibreChat:
+
+1. KHI TẠO ẢNH MỚI (TEXT-TO-IMAGE):
+   - Chọn model `gpt-image-2` (hoặc `gemini-3.1-flash-image-preview`).
+   - Gõ prompt mô tả ảnh cần tạo: "Vẽ một bức tranh sơn thủy hữu tình lúc hoàng hôn..."
+   - Bot sẽ tự động trả về bức ảnh vẽ được trực tiếp trong cửa sổ chat!
+
+2. KHI CẦN THAM CHIẾU ẢNH (IMAGE-TO-IMAGE HOẶC GHÉP NHIỀU ẢNH):
+   - Chọn model `gpt-image-2`.
+   - Nhấn nút ĐÍNH KÈM / TẢI ẢNH (biểu tượng Kẹp giấy 📎 hoặc dấu Cộng ➕).
+   - Chọn 1 hoặc 2 bức ảnh từ máy tính / điện thoại tải lên khung chat.
+   - Nhập prompt: "Dựa vào 2 ảnh trên, hãy ghép nhân vật ở ảnh 1 vào khung cảnh ở ảnh 2 giúp tôi".
+   - Nhấn Gửi -> Gateway tự động gom chuyển 2 ảnh vào luồng xử lý `edits` và trả về ảnh kết hợp ngay trong chat!
+
+================================================================================
+PHẦN 10: CẤU HÌNH NHANH TRÊN CÁC PHẦN MỀM PHỔ BIẾN
+================================================================================
+
+1. CURSOR / VS CODE (CONTINUE / CLINE / ROO CODE):
+   • Provider: OpenAI Compatible
+   • Base URL: https://tuansuapi.store/v1
+     (Nếu dùng riêng dòng GPT-5.6 / Astra: https://router.danlapkythuattonghop-hanoi.com.vn/v1)
+   • API Key : Dán key của bạn (dạng sk-9r-xxxx)
+   • Model ID: Nhập tên model (vd: gpt-5.6-luna, claude-opus-4-8-ccmax, deepseek-v4-pro-0813)
+
+2. NEXTCHAT (ChatGPT-Next-Web):
+   • Cài đặt (Settings) -> Nhà cung cấp mô hình (Model Provider): Chọn "OpenAI"
+   • API URL (Endpoint): Nhập `https://tuansuapi.store` (hoặc `https://tuansuapi.store/v1`)
+   • API Key: Dán mã API Key của bạn
+   • Danh sách model tùy chỉnh (Custom Models): Thêm các model vào ô:
+     gpt-5.6-luna,gpt-5.6-terra,claude-sonnet-5-ccmax,gpt-image-2,deepseek-v4.1-flash
+
+3. CHERRY STUDIO:
+   • Cài đặt (Settings) -> Model Provider -> Thêm Custom OpenAI Provider:
+     - Provider Name: TUAN SU API
+     - API Base URL : https://tuansuapi.store/v1
+     - API Key      : Dán key của bạn
+     - Bấm "Manage Models" -> Thêm các model bạn đã mua vào danh sách.
+
+4. CHATBOX:
+   • Cài đặt -> Model Provider: Chọn "OpenAI API Compatible"
+   • API Host: https://tuansuapi.store/v1
+   • API Key: Dán key của bạn
+   • Model: Chọn hoặc gõ tên model bạn đã mua.
+
+================================================================================
+PHẦN 11: CÁC LƯU Ý KỸ THUẬT QUAN TRỌNG
+================================================================================
+
+1. LƯU Ý SỐNG CÒN VỀ STREAM & TIMEOUT:
+   - Với các model suy luận sâu như `gpt-5.6-luna`, `claude-opus-5`, `deepseek-v4-pro`, AI cần
+     thời gian suy nghĩ (reasoning) từ 20 đến 45 giây trước khi ra câu trả lời hoàn chỉnh.
+   - Hầu hết các ứng dụng (NextChat, Chatbox, thư viện code) mặc định Request Timeout là 30s.
+   - NẾU TẮT STREAM ("stream": false): Trong suốt 30s suy luận, server chưa gửi byte nào về,
+     phần mềm client sẽ tưởng server bị treo và TỰ ĐỘNG NGẮT KẾT NỐI (dẫn đến lỗi Status 499 / 524)!
+   - KHI BẬT STREAM ("stream": true): Hệ thống phát nhịp tim (heartbeat) và gửi từng token về
+     client liên tục, đảm bảo kết nối mượt mà, nhanh và không bao giờ bị timeout.
+   - Khuyến nghị: Luôn cấu hình Request Timeout của client từ 60s - 120s và luôn bật STREAM.
+
+2. CƠ CHẾ CACHE TOKEN (PROMPT CACHING):
+   - Hệ thống tự động cache ngữ cảnh (prompt cache) đối với các chuỗi prompt dài.
+   - Khi cache hit, giá token đầu vào sẽ được giảm cực mạnh (chỉ từ 50đ - 180đ/1M token thay vì giá đầy đủ).
+
+3. QUẢN LÝ HẠN MỨC & NẠP VÍ TỰ ĐỘNG:
+   - Bạn có thể kiểm tra số dư và lịch sử chi tiết từng request tại Bot Telegram hoặc qua:
+     Web Portal: https://tuansuapi.store/portal (đăng nhập bằng mã API key).
+
+================================================================================
+PHẦN 12: HƯỚNG DẪN MUA TÀI KHOẢN GMAIL / SOCIAL QUA REST API (CHUẨN REST API)
+================================================================================
+
+Hệ thống hỗ trợ REST API trực tiếp giúp bạn tra cứu danh mục, mã loại (product_id),
+giá tiền, tồn kho và đặt mua số lượng lớn tài khoản Gmail tự động.
+Chi phí mua tài khoản sẽ được trừ trực tiếp vào số dư Ví chung của API Key.
+
+11.1. Tra cứu danh mục & mã loại Gmail (GET):
+• Endpoint: GET https://tuansuapi.store/v1/gmail/products
+• Header: Authorization: Bearer <API_KEY_CỦA_BẠN>
+
+Mẫu gọi curl:
+curl -X GET "https://tuansuapi.store/v1/gmail/products" \
+  -H "Authorization: Bearer sk-9r-xxxx"
+
+Kết quả trả về (JSON):
+{
+  "status": "success",
+  "total": 76,
+  "products": [
+    {
+      "product_id": "75441",
+      "type_id": "75441",
+      "name": "Gmail New Random đã ngâm 3 - 7 ngày (ID|Pass)",
+      "price_vnd": 28400,
+      "stock": 1249,
+      "description": "Login bằng app gmail trên phone...",
+      "category": "Gmail New"
+    }
+  ]
+}
+
+11.2. Đặt mua tài khoản theo mã loại & số lượng (POST):
+• Endpoint: POST https://tuansuapi.store/v1/gmail/buy
+• Header:
+  - Authorization: Bearer <API_KEY_CỦA_BẠN>
+  - Content-Type: application/json
+• Body JSON:
+  {
+    "product_id": "75441",   // Mã loại lấy từ danh mục ở bước 11.1
+    "quantity": 2            // Số lượng tài khoản cần mua
+  }
+
+Mẫu gọi curl:
+curl -X POST "https://tuansuapi.store/v1/gmail/buy" \
+  -H "Authorization: Bearer sk-9r-xxxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "75441",
+    "quantity": 2
+  }'
+
+Kết quả trả về thành công (200 OK):
+{
+  "status": "success",
+  "message": "Mua thành công 2 tài khoản Gmail New Random",
+  "order": {
+    "product_id": "75441",
+    "product_name": "Gmail New Random đã ngâm 3 - 7 ngày",
+    "quantity": 2,
+    "price_each_vnd": 28400,
+    "total_amount_vnd": 56800,
+    "remaining_balance_vnd": 143200,
+    "accounts": [
+      "username1@gmail.com|password123|recovery1@gmail.com",
+      "username2@gmail.com|password456|recovery2@gmail.com"
+    ]
+  }
+}
+
+11.3. Mẫu Python gọi trực tiếp:
+```python
+import requests
+
+API_KEY = "sk-9r-xxxx"
+BASE_URL = "https://tuansuapi.store/v1"
+HEADERS = {
+    "Authorization": f"Bearer {API_KEY}",
+    "Content-Type": "application/json"
+}
+
+# 1. Lấy danh sách sản phẩm còn hàng
+res = requests.get(f"{BASE_URL}/gmail/products", headers=HEADERS)
+products = res.json().get("products", [])
+print(f"Tổng số loại: {len(products)}")
+
+# 2. Mua 2 tài khoản loại 75441
+order = requests.post(f"{BASE_URL}/gmail/buy", json={
+    "product_id": "75441",
+    "quantity": 2
+}, headers=HEADERS).json()
+
+if order.get("status") == "success":
+    print("Mua thành công! Danh sách tài khoản:")
+    for acc in order["order"]["accounts"]:
+        print(" ->", acc)
+else:
+    print("Lỗi:", order.get("message"))
+```
+
+11.4. Tương thích phụ qua Chat Completions:
+Bạn cũng có thể gọi qua `/v1/chat/completions` với model `gmail` hoặc `gmail-{product_id}`
+và ghi số lượng trong messages (ví dụ: "Mua 2 gmail"). Hệ thống vẫn hỗ trợ song song.
+
+================================================================================
+PHẦN 13: XỬ LÝ SỰ CỐ VÀ CÁC CÂU HỎI THƯỜNG GẶP (FAQ)
+================================================================================
+
+Hỏi: Tôi gọi model `gpt-5.6-luna` bị lỗi đỏ status 499 hoặc 524?
+Đáp: Lỗi 499/524 là do client của bạn tự ngắt kết nối khi hết 30s timeout trong lúc AI đang suy luận.
+     Hãy BẬT "stream": true hoặc tăng Request Timeout trong app của bạn lên 90s - 120s.
+
+Hỏi: Muốn ghép 2 ảnh thì ảnh kích thước thế nào?
+Đáp: Bạn có thể dùng ảnh PNG, JPG dung lượng dưới 10MB mỗi ảnh. Hệ thống sẽ tự chuẩn hóa
+     và sinh ra ảnh vuông 1024x1024 (hoặc tỉ lệ bạn chọn trong tham số `size`).
+
+Hỏi: Kiểm tra số dư tài khoản ở đâu?
+Đáp: Mở Bot Telegram bán hàng của shop -> Nhấn menu "API CỦA TÔI" hoặc "VÍ & SỐ DƯ",
+     hoặc truy cập Web Portal: https://tuansuapi.store/portal nhập mã key để xem chi tiết.
+
+Hỏi: Khi dùng hết tiền thì nạp thêm bằng cách nào?
+Đáp: Vào Bot Telegram hoặc Web Portal -> Chọn Nạp thêm tiền cho API bằng mã VietQR chuyển khoản
+     tự động (SePay), hệ thống tự động cộng tiền trong 10-30 giây hoạt động 24/7.
+
+================================================================================
+Chúc bạn có những trải nghiệm lập trình và sáng tạo tuyệt vời cùng dịch vụ API!
+Hỗ trợ kỹ thuật 24/7 qua Telegram: @tuansu_28
+================================================================================

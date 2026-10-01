@@ -1,0 +1,84 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  }
+}
+
+/* Custom sleek dark scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d0d10;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(229, 255, 0, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(229, 255, 0, 0.55);
+  }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s infinite;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
+.animate-float {
+  animation: float 4s ease-in-out infinite;
+}
+
+/* ==========================================================================
+   Higgsfield-Style Frosted Glassmorphism
+   - Gentle, soft frosted diffusion (14-16px blur)
+   - Translucent smoky charcoal tint allowing background content to softly show through
+   - Refined 1px highlight border & specular top edge
+   ========================================================================== */
+
+.glass-popover {
+  background-color: rgba(18, 20, 26, 0.75) !important;
+  -webkit-backdrop-filter: blur(16px) saturate(150%) !important;
+  backdrop-filter: blur(16px) saturate(150%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.75), inset 0 1px 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+.glass-pill {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  backdrop-filter: blur(10px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+.glass-pill:hover {
+  background-color: rgba(255, 255, 255, 0.09) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.glass-pill-active {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(229, 255, 0, 0.5) !important;
+  color: #e5ff00 !important;
+  box-shadow: 0 0 15px rgba(229, 255, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+}
+
