@@ -24,8 +24,10 @@ export default function ReferenceModal({ isOpen, onClose, referenceImages = [], 
       if (file.size > 100 * 1024 * 1024) { alert(`${file.name}: Vượt quá 100MB`); continue }
 
       try {
-        setUploadProgress(Math.round((successCount / files.length) * 100))
-        const { blobUrl, pathname } = await uploadToBlob(file)
+        const { blobUrl, pathname } = await uploadToBlob(file, (percent) => {
+          const overallProgress = Math.round(((successCount * 100) + percent) / files.length)
+          setUploadProgress(overallProgress)
+        })
         onAddImage(blobUrl, pathname, file.name)
         successCount++
       } catch (error) {
@@ -73,11 +75,16 @@ export default function ReferenceModal({ isOpen, onClose, referenceImages = [], 
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
             <button onClick={() => fileInputRef.current?.click()} disabled={isUploading} className="aspect-square border-2 border-dashed border-zinc-700 hover:border-[#e5ff00] bg-zinc-900/60 rounded-2xl flex flex-col items-center justify-center gap-2 transition group disabled:opacity-50 disabled:cursor-not-allowed">
               {isUploading ? (
-                <>
-                  <Loader2 className="w-8 h-8 text-[#e5ff00] animate-spin" />
-                  <span className="text-xs font-semibold text-zinc-300">Đang upload...</span>
-                  <span className="text-[10px] text-zinc-500">{uploadProgress}%</span>
-                </>
+                <div className="w-full flex flex-col items-center justify-center p-4">
+                  <span className="text-sm font-medium text-zinc-300 mb-2">Đang upload...</span>
+                  <div className="w-full h-1.5 bg-zinc-800 rounded-full overflow-hidden mb-2">
+                    <div 
+                      className="h-full bg-[#e5ff00] transition-all duration-200 ease-out"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-zinc-500 font-medium">{uploadProgress}%</span>
+                </div>
               ) : (
                 <>
                   <div className="p-3 rounded-full bg-zinc-800 group-hover:bg-zinc-700 transition"><Upload className="w-6 h-6 text-zinc-400 group-hover:text-[#e5ff00]" /></div>

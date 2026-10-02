@@ -172,10 +172,8 @@ export async function fetchVideoBlob(url, apiKey, baseUrl) {
 export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHeartbeat } = {}) {
   const cleanBase = (baseUrl || getBaseUrl() || 'https://tuansuapi.store/v1').replace(/\/+$/, '')
   const endpoint = `${cleanBase}/videos/${videoId}`
-  const startTime = Date.now()
-  const maxWaitMs = 900000 // 15 mins
 
-  while (Date.now() - startTime < maxWaitMs) {
+  while (true) {
     if (signal?.aborted) {
       throw new Error('Quá trình tạo video đã bị hủy.')
     }
@@ -232,8 +230,6 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
     // Wait 5 seconds before next polling request per provider recommendation
     await new Promise(r => setTimeout(r, 5000))
   }
-
-  throw new Error('Quá trình render video đã vượt quá thời gian tối đa (15 phút).')
 }
 
 /**
