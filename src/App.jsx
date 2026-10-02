@@ -90,30 +90,30 @@ export default function App() {
         name,
         url,
         pathname, // Store pathname for Vercel Blob deletion
-        selected: prev.length === 0, // Auto-select first image
+        selected: true, // Always select newly added image
       }
       const updated = [...prev, newImg]
-      if (updated.length === 1) {
-        setReferenceImage(updated[0].url)
+      if (updated.filter(i => i.selected).length === 1) {
+        setReferenceImage(newImg.url)
       }
       return updated
     })
   }
 
   const handleRemoveReferenceImage = (idOrIndex) => {
+    if (idOrIndex === 'ref-single') {
+      setReferenceImage(null)
+      return
+    }
     setReferenceImages(prev => {
-      let nextList
-      if (typeof idOrIndex === 'number') {
-        nextList = prev.filter((_, idx) => idx !== idOrIndex)
-      } else {
-        nextList = prev.filter(img => img.id !== idOrIndex)
-      }
-      const reindexed = nextList.map((img, idx) => ({
-        ...img,
-        name: `Image ${idx + 1}`
-      }))
-      setReferenceImage(reindexed[0]?.url || null)
-      return reindexed
+      const updated = prev.map((img, idx) => {
+        if (img.id === idOrIndex || idx === idOrIndex) {
+          return { ...img, selected: false }
+        }
+        return img
+      })
+      setReferenceImage(updated.find(i => i.selected)?.url || null)
+      return updated
     })
   }
 

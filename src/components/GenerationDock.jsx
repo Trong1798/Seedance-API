@@ -37,9 +37,10 @@ export default function GenerationDock({
   const [mentionQuery, setMentionQuery] = useState('')
   const [selectedMentionIndex, setSelectedMentionIndex] = useState(0)
 
-  // Consolidate images list: use referenceImages array or fallback to single referenceImage
-  const effectiveImages = referenceImages?.length > 0
-    ? referenceImages
+  // Consolidate images list: use selected referenceImages or fallback to single referenceImage
+  const selectedRefImages = referenceImages?.filter(img => img.selected) || []
+  const effectiveImages = selectedRefImages.length > 0
+    ? selectedRefImages
     : (referenceImage ? [{ id: 'ref-single', name: 'Image 1', url: referenceImage }] : [])
 
   const filteredMentionImages = effectiveImages.filter(img =>
