@@ -5,6 +5,7 @@ export const STORAGE_KEYS = {
   BASE_URL: 'seedance_base_url',
   SAVED_VIDEOS: 'seedance_generated_videos',
   ACTIVE_TAB: 'seedance_active_tab',
+  REFERENCE_IMAGES: 'seedance_reference_images',
 }
 
 export const DEFAULT_BASE_URL = 'https://tuansuapi.store/v1'
@@ -35,6 +36,24 @@ export function setBaseUrl(url) {
     localStorage.setItem(STORAGE_KEYS.BASE_URL, DEFAULT_BASE_URL)
   } else {
     localStorage.setItem(STORAGE_KEYS.BASE_URL, url.trim().replace(/\/$/, ''))
+  }
+}
+
+export function getReferenceImages() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.REFERENCE_IMAGES)
+    return raw ? JSON.parse(raw) : []
+  } catch (e) {
+    console.error('Failed to parse reference images:', e)
+    return []
+  }
+}
+
+export function saveReferenceImages(images) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.REFERENCE_IMAGES, JSON.stringify(images))
+  } catch (e) {
+    console.error('Failed to save reference images:', e)
   }
 }
 

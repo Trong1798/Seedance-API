@@ -7,7 +7,7 @@ import VideoResult from './components/VideoResult'
 import SettingsModal from './components/SettingsModal'
 import ReferenceModal from './components/ReferenceModal'
 import HistoryModal from './components/HistoryModal'
-import { getApiKey, getSavedVideos, saveVideoToHistory, removeVideoFromHistory } from './services/storage'
+import { getApiKey, getSavedVideos, saveVideoToHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
 import { generateVideo, generateImage } from './services/api'
 import { deleteFromBlob } from './services/blobStorage'
 import { VIDEO_MODELS, IMAGE_MODELS, ASPECT_RATIOS, IMAGE_ASPECT_RATIOS } from './constants/models'
@@ -22,9 +22,21 @@ export default function App() {
   const [aspectRatio, setAspectRatio] = useState('16:9')
   const [resolution, setResolution] = useState('720p')
   const [referenceImage, setReferenceImage] = useState(null)
-  const [referenceImages, setReferenceImages] = useState([])
+  const [referenceImages, setReferenceImages] = useState(getReferenceImages())
+
+  // Set referenceImage to the selected image from the referenceImages on mount
+  useEffect(() => {
+    const selectedImage = referenceImages.find(img => img.selected)
+    if (selectedImage) {
+      setReferenceImage(selectedImage.url)
+    }
+  }, [])
   const [isGenerating, setIsGenerating] = useState(false)
   const [activeVideo, setActiveVideo] = useState(null)
+  useEffect(() => {
+    saveReferenceImages(referenceImages)
+  }, [referenceImages])
+
   const [savedVideos, setSavedVideos] = useState([])
   const [errorMsg, setErrorMsg] = useState('')
   const [showSettings, setShowSettings] = useState(false)
