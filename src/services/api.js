@@ -215,7 +215,7 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
         timestamp: Date.now(),
         status: data.status,
         progress: data.progress,
-        message: data.status === 'processing' 
+        message: ['processing', 'in_progress'].includes(data.status) 
           ? `Đang render video... ${data.progress ? data.progress + '%' : ''}`
           : `Trạng thái: ${data.status || 'Đang xử lý'}`,
       })
@@ -271,18 +271,17 @@ export async function generateVideo({
     size,
   }
 
-  const refUrl = (() => {
-    if (referenceImages && referenceImages.length > 0) {
-      const selected = referenceImages.find(i => i.selected)
-      return selected ? selected.url : referenceImages[0].url
+  if (referenceImages && referenceImages.length > 0) {
+    const selectedImages = referenceImages.filter(i => i.selected)
+    if (selectedImages.length > 0) {
+      if (selectedImages.length === 1) {
+        payload.input_reference = { image_url: selectedImages[0].url }
+      } else {
+        payload.input_reference = selectedImages.map(img => ({ image_url: img.url }))
+      }
     }
-    return (typeof referenceImage === 'string' && referenceImage.trim()) ? referenceImage.trim() : null
-  })()
-
-  if (refUrl && refUrl.trim()) {
-    payload.input_reference = {
-      image_url: refUrl.trim()
-    }
+  } else if (typeof referenceImage === 'string' && referenceImage.trim()) {
+    payload.input_reference = { image_url: referenceImage.trim() }
   }
 
   // 900s (15 mins) total timeout for video generation as specified in documentation
@@ -384,7 +383,7 @@ export async function generateVideo({
     }
 
     // If server queued or is processing the video, automatically poll until completed
-    if ((data.status === 'processing' || data.status === 'queued') && data.id) {
+    if (['processing', 'queued', 'in_progress', 'pending', 'starting'].includes(data.status) && data.id) {
       if (onHeartbeat) {
         onHeartbeat({
           timestamp: Date.now(),
@@ -465,7 +464,7 @@ export async function generateImage({
   const cleanBase = rawBaseUrl.replace(/\/+$/, '')
 
   const imageList = Array.isArray(referenceImages) && referenceImages.length > 0
-    ? referenceImages.map(img => (typeof img === 'string' ? img : img.url)?.trim()).filter(Boolean)
+    ? referenceImages.filter(i => i.selected).map(img => (typeof img === 'string' ? img : img.url)?.trim()).filter(Boolean)
     : (referenceImage && referenceImage.trim() ? [referenceImage.trim()] : [])
 
   const hasReference = imageList.length > 0
