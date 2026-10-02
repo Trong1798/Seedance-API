@@ -66,14 +66,7 @@ export default function ReferenceModal({ isOpen, onClose, referenceImages = [], 
           <button onClick={onClose} className="p-2 rounded-lg bg-zinc-800/80 hover:bg-zinc-800 text-zinc-400 hover:text-white transition"><X className="w-4 h-4" /></button>
         </div>
 
-        {selectedCount > 1 && (
-          <div className="mx-6 mt-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl">
-            <p className="text-xs text-amber-300 flex items-start gap-2">
-              <span className="text-sm">⚠️</span>
-              <span>Bạn đang chọn <strong>{selectedCount} ảnh</strong>. API có thể chỉ hỗ trợ 1 ảnh tham chiếu. Nếu gặp lỗi, vui lòng chọn lại 1 ảnh duy nhất.</span>
-            </p>
-          </div>
-        )}
+
 
 
         <div className="p-6 max-h-[60vh] overflow-y-auto">
