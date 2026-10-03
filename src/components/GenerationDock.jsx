@@ -282,20 +282,26 @@ export default function GenerationDock({
 
             {/* Prompt Textarea & Mention Popover */}
             <div className="relative w-full">
-              <textarea
-                ref={textareaRef}
-                value={prompt}
-                onChange={handlePromptChange}
-                onKeyDown={handleKeyDown}
-                onPaste={handlePaste}
-                placeholder={
-                  isImageMode
-                    ? "Mô tả hình ảnh bạn muốn tạo... (ví dụ: Chú rồng nhỏ dễ thương 3D Pixar, cyberpunk city... hoặc dán ảnh vào Ctrl+V)"
-                    : "Describe the video you want to create... (ví dụ: Cinematic drone shot flying through neon Tokyo... hoặc dán ảnh vào Ctrl+V)"
-                }
-                rows={2}
-                className="w-full bg-transparent text-white placeholder-zinc-500 text-sm sm:text-base resize-none focus:outline-none focus:ring-0 leading-relaxed font-normal"
-              />
+                <textarea
+                  ref={textareaRef}
+                  value={prompt}
+                  onChange={(e) => {
+                    handlePromptChange(e)
+                    // Auto-resize logic
+                    e.target.style.height = 'auto'
+                    e.target.style.height = `${Math.min(e.target.scrollHeight, 24 * 7)}px` // Max 7 lines (~24px per line)
+                  }}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={
+                    isImageMode
+                      ? "Mô tả hình ảnh bạn muốn tạo... (ví dụ: Chú rồng nhỏ dễ thương 3D Pixar, cyberpunk city... hoặc dán ảnh vào Ctrl+V)"
+                      : "Describe the video you want to create... (ví dụ: Cinematic drone shot flying through neon Tokyo... hoặc dán ảnh vào Ctrl+V)"
+                  }
+                  rows={2}
+                  className="w-full bg-transparent text-white placeholder-zinc-500 text-sm sm:text-base resize-none focus:outline-none focus:ring-0 leading-relaxed font-normal overflow-y-auto min-h-[48px]"
+                  style={{ maxHeight: '168px' }} // 7 lines * ~24px line-height
+                />
 
               {/* Floating Mention Suggestions Popover (Matching screenshot) */}
               {showMentionMenu && (
