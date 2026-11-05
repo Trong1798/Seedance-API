@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react'
-import { Plus, AtSign, Film, Image as ImageIcon, Clock, Diamond, Sliders, ChevronDown, Search, Sparkles } from 'lucide-react'
+import { AtSign, Film, Image as ImageIcon, Clock, Diamond, Sliders, ChevronDown, Search, Sparkles } from 'lucide-react'
 import {
   VIDEO_MODELS,
   IMAGE_MODELS,
@@ -231,16 +231,6 @@ export default function DockControls({
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.08]">
       <div className="flex flex-wrap items-center gap-1.5">
-        {/* Plus / Reference */}
-        <button
-          type="button"
-          onClick={onOpenReferenceModal}
-          className="p-2 rounded-xl glass-pill text-zinc-300 hover:text-white transition-all"
-          title={isImageMode ? 'Thêm ảnh tham chiếu / ghép ảnh' : 'Thêm ảnh tham chiếu (Image-to-Video)'}
-        >
-          <Plus className="w-4 h-4" />
-        </button>
-
         {/* Reference Mention Button (@) */}
         <button
           type="button"

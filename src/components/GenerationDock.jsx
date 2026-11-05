@@ -32,6 +32,20 @@ export default function GenerationDock({
   const textareaRef = useRef(null)
   const mentionPopoverRef = useRef(null)
   const fileInputRef = useRef(null)
+  const highlightRef = useRef(null)
+  const [textareaInnerWidth, setTextareaInnerWidth] = useState(null)
+
+  // Lớp tô sáng phải có cùng bề rộng nội dung với textarea (trừ thanh cuộn) để chữ xuống dòng khớp nhau
+  useEffect(() => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const update = () => setTextareaInnerWidth(ta.clientWidth)
+    update()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(update)
+    ro.observe(ta)
+    return () => ro.disconnect()
+  }, [])
 
   const [showMentionMenu, setShowMentionMenu] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -44,6 +58,26 @@ export default function GenerationDock({
     ? selectedRefImages
     : (referenceImage ? [{ id: 'ref-single', name: 'Image 1', url: referenceImage }] : [])
   ).map((img, idx) => ({ ...img, label: `Image${idx + 1}` }))
+
+  // Tô sáng tag @Image1, @Image2... trong prompt (tag trỏ tới ảnh không tồn tại sẽ có màu đỏ)
+  const renderHighlightedPrompt = (text) => {
+    const parts = text.split(/(@Image\d+)/gi)
+    return parts.map((part, i) => {
+      if (i % 2 === 0) return part
+      const n = parseInt(part.slice(6), 10)
+      const isValid = n >= 1 && n <= effectiveImages.length
+      return (
+        <span
+          key={i}
+          className={isValid
+            ? 'text-sky-300 bg-sky-400/15 rounded-[4px] shadow-[0_0_0_2px_rgba(56,189,248,0.15)]'
+            : 'text-rose-300 bg-rose-500/15 rounded-[4px] shadow-[0_0_0_2px_rgba(244,63,94,0.15)]'}
+        >
+          {part}
+        </span>
+      )
+    })
+  }
 
   const filteredMentionImages = effectiveImages.filter(img => {
     const q = mentionQuery.trim().toLowerCase()
@@ -288,6 +322,17 @@ export default function GenerationDock({
 
             {/* Prompt Textarea & Mention Popover */}
             <div className="relative w-full">
+                {/* Lớp hiển thị phía sau textarea: vẽ chữ và tô sáng tag @ImageN */}
+                <div
+                  ref={highlightRef}
+                  aria-hidden="true"
+                  className="absolute top-0 left-0 h-full pointer-events-none overflow-hidden whitespace-pre-wrap break-words text-white text-sm sm:text-base leading-relaxed font-normal"
+                  style={{ width: textareaInnerWidth ?? '100%' }}
+                >
+                  {renderHighlightedPrompt(prompt)}
+                  {/* ký tự rộng 0 để dòng trống cuối cùng vẫn có chiều cao */}
+                  {'​'}
+                </div>
                 <textarea
                   ref={textareaRef}
                   value={prompt}
@@ -296,6 +341,10 @@ export default function GenerationDock({
                     // Auto-resize logic
                     e.target.style.height = 'auto'
                     e.target.style.height = `${Math.min(e.target.scrollHeight, 24 * 7)}px` // Max 7 lines (~24px per line)
+                    setTextareaInnerWidth(e.target.clientWidth)
+                  }}
+                  onScroll={(e) => {
+                    if (highlightRef.current) highlightRef.current.scrollTop = e.target.scrollTop
                   }}
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
@@ -305,7 +354,7 @@ export default function GenerationDock({
                       : "Describe the video you want to create... (ví dụ: Cinematic drone shot flying through neon Tokyo... hoặc dán ảnh vào Ctrl+V)"
                   }
                   rows={2}
-                  className="w-full bg-transparent text-white placeholder-zinc-500 text-sm sm:text-base resize-none focus:outline-none focus:ring-0 leading-relaxed font-normal overflow-y-auto min-h-[48px]"
+                  className="relative block w-full bg-transparent text-transparent caret-white selection:bg-sky-500/35 placeholder-zinc-500 text-sm sm:text-base resize-none focus:outline-none focus:ring-0 leading-relaxed font-normal overflow-y-auto min-h-[48px]"
                   style={{ maxHeight: '168px' }} // 7 lines * ~24px line-height
                 />
 
