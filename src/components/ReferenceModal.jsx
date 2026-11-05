@@ -8,6 +8,7 @@ export default function ReferenceModal({ isOpen, onClose, referenceImages = [], 
   const [isUploading, setIsUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [previewImage, setPreviewImage] = useState(null)
+  const [isDeletingSelected, setIsDeletingSelected] = useState(false)
   const fileInputRef = useRef(null)
 
   const selectedCount = referenceImages.filter(img => img.selected).length
@@ -45,6 +46,24 @@ export default function ReferenceModal({ isOpen, onClose, referenceImages = [], 
     e.stopPropagation()
     if (!confirm('Xóa ảnh này? (Sẽ xóa vĩnh viễn khỏi Vercel Blob)')) return
     try { await onDeleteImage(id) } catch (error) { alert(`Lỗi xóa ảnh: ${error.message}`) }
+  }
+
+  const handleDeleteSelected = async () => {
+    const targets = referenceImages.filter(img => img.selected)
+    if (targets.length === 0) return
+    if (!confirm(`Xóa ${targets.length} ảnh đã chọn? (Sẽ xóa vĩnh viễn khỏi Vercel Blob)`)) return
+    setIsDeletingSelected(true)
+    try {
+      const results = await Promise.allSettled(targets.map(img => onDeleteImage(img.id)))
+      const failed = results
+        .map((r, i) => (r.status === 'rejected' ? `${targets[i].name}: ${r.reason?.message || r.reason}` : null))
+        .filter(Boolean)
+      if (failed.length > 0) {
+        alert(`Không xóa được ${failed.length}/${targets.length} ảnh:\n${failed.join('\n')}`)
+      }
+    } finally {
+      setIsDeletingSelected(false)
+    }
   }
 
   const handleSelectOnly = (e, id) => {
@@ -132,7 +151,19 @@ export default function ReferenceModal({ isOpen, onClose, referenceImages = [], 
         </div>
 
         <div className="px-6 py-4 border-t border-zinc-800 flex items-center justify-between">
-          <p className="text-[11px] text-zinc-500">Ảnh được lưu trên Vercel Blob (miễn phí 1GB)</p>
+          {selectedCount >= 2 ? (
+            <button
+              onClick={handleDeleteSelected}
+              disabled={isDeletingSelected}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 hover:text-rose-200 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Xóa vĩnh viễn tất cả ảnh đang chọn"
+            >
+              {isDeletingSelected ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+              {isDeletingSelected ? 'Đang xóa...' : `Xóa ${selectedCount} ảnh đã chọn`}
+            </button>
+          ) : (
+            <p className="text-[11px] text-zinc-500">Ảnh được lưu trên Vercel Blob (miễn phí 1GB)</p>
+          )}
           <div className="flex gap-2">
             <button onClick={onClose} className="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-semibold transition">Hủy</button>
             <button onClick={onClose} disabled={selectedCount === 0} className="px-4 py-2 rounded-xl bg-[#e5ff00] hover:bg-[#d4ee00] disabled:opacity-40 disabled:cursor-not-allowed text-black text-sm font-bold transition">
