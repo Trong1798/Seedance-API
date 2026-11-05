@@ -1,5 +1,93 @@
 import { getApiKey, getBaseUrl } from './storage.js'
 
+const PORTAL_URL = 'https://tuansuapi.store/portal'
+
+/**
+ * Lấy chuỗi thông báo từ trường `error` của Gateway.
+ * Định dạng chuẩn: { error: { type, code, message, request_id } } — nhưng có thể là string.
+ */
+export function extractServerError(errField) {
+  if (!errField) return { message: '', code: '', requestId: '' }
+  if (typeof errField === 'string') return { message: errField, code: '', requestId: '' }
+  return {
+    message: errField.message || '',
+    code: errField.code || errField.type || '',
+    requestId: errField.request_id || '',
+  }
+}
+
+function isBalanceError(text) {
+  return /insufficient|balance|credit|quota|số dư|so du/i.test(text || '')
+}
+
+/**
+ * Chuyển mã HTTP + thông báo của Gateway thành lỗi tiếng Việt dễ hiểu,
+ * luôn giữ lại mã HTTP, mã lỗi, request_id và thông điệp gốc để tiện báo hỗ trợ.
+ * kind: 'video' | 'image' | 'status' | 'balance'
+ */
+export function describeApiError(status, { message = '', code = '', requestId = '' } = {}, kind = 'video') {
+  const what = kind === 'image' ? 'tạo ảnh' : 'tạo video'
+  let friendly
+
+  if (status === 402 || isBalanceError(message) || isBalanceError(code)) {
+    friendly = `Số dư không đủ để ${what}. Vui lòng nạp thêm tại ${PORTAL_URL}`
+  } else if (status === 401) {
+    friendly = 'API Key sai, hết hạn hoặc không hoạt động. Vui lòng kiểm tra lại trong phần Cài đặt.'
+  } else if (status === 403) {
+    friendly = 'API Key đã bị khóa hoặc chưa được cấp quyền dùng model này.'
+  } else if (status === 404) {
+    friendly = /model/i.test(code + message)
+      ? 'Model không tồn tại hoặc chưa được cấp cho API Key này (kiểm tra danh sách model qua GET /v1/models).'
+      : kind === 'status'
+      ? 'Không tìm thấy task video (ID không tồn tại hoặc đã bị hủy).'
+      : 'Không tìm thấy endpoint/model trên Gateway. Kiểm tra lại Base URL và tên model.'
+  } else if (status === 400 || status === 422) {
+    friendly = 'Yêu cầu không hợp lệ (sai tham số, sai tên model hoặc ảnh tham chiếu không đọc được).'
+  } else if (status === 409) {
+    friendly = 'API Key này không dùng số dư tiền (409).'
+  } else if (status === 413) {
+    friendly = 'Dữ liệu gửi lên quá lớn. Mỗi ảnh tham chiếu nên dưới 10MB.'
+  } else if (status === 429) {
+    friendly = 'Bạn gửi quá nhiều yêu cầu hoặc hệ thống đang quá tải. Vui lòng thử lại sau giây lát.'
+  } else if (status === 499 || status === 524) {
+    friendly = 'Kết nối bị ngắt do quá thời gian chờ (Cloudflare timeout). Vui lòng thử lại.'
+  } else if (status === 503) {
+    friendly = 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.'
+  } else if (status >= 500) {
+    friendly = 'Máy chủ Gateway gặp lỗi. Job thất bại do lỗi hệ thống sẽ không bị trừ tiền.'
+  } else {
+    friendly = message || `Lỗi không xác định khi ${what}.`
+  }
+
+  const meta = [status ? `HTTP ${status}` : '', code, requestId ? `request_id: ${requestId}` : '']
+    .filter(Boolean)
+    .join(' · ')
+  const detail = message && message !== friendly ? `\nChi tiết từ máy chủ: ${message}` : ''
+  return `${friendly}${meta ? ` (${meta})` : ''}${detail}`
+}
+
+/**
+ * Đọc body lỗi của Response (chỉ đọc 1 lần) và trả về Error đã được diễn giải.
+ */
+export async function readApiError(res, kind = 'video') {
+  let text = ''
+  try {
+    text = await res.text()
+  } catch {}
+  let info = { message: '', code: '', requestId: '' }
+  try {
+    const json = JSON.parse(text)
+    info = extractServerError(json.error)
+    if (!info.message && json.message) info.message = json.message
+  } catch {
+    info.message = text.trim().slice(0, 300)
+  }
+  const err = new Error(describeApiError(res.status, info, kind))
+  err.status = res.status
+  err.code = info.code
+  return err
+}
+
 /**
  * Resolves raw URLs, relative paths or localhost rewrites to absolute Gateway URLs.
  */
@@ -199,12 +287,9 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
         await new Promise(r => setTimeout(r, 5000))
         continue
       }
-      let errText = `HTTP ${res.status}`
-      try {
-        const errJson = await res.json()
-        errText = errJson.error?.message || errJson.message || errText
-      } catch {}
-      throw new Error(`Lỗi kiểm tra trạng thái video (${errText})`)
+      const err = await readApiError(res, 'status')
+      err.message = `Lỗi kiểm tra trạng thái video (ID: ${videoId}): ${err.message}`
+      throw err
     }
 
     const data = await res.json()
@@ -223,8 +308,14 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
       return data
     }
 
-    if (data.status === 'failed' || data.status === 'error') {
-      throw new Error(data.error?.message || data.error || data.message || 'Quá trình render video thất bại trên máy chủ.')
+    if (['failed', 'error', 'cancelled', 'canceled'].includes(data.status)) {
+      const info = extractServerError(data.error)
+      const reason = info.message || data.message || 'Quá trình render video thất bại trên máy chủ.'
+      const meta = [info.code, info.requestId ? `request_id: ${info.requestId}` : ''].filter(Boolean).join(' · ')
+      throw new Error(
+        `Render video thất bại (ID: ${videoId}${meta ? ` · ${meta}` : ''}): ${reason}\n` +
+        'Job thất bại do lỗi hệ thống sẽ không bị trừ tiền.'
+      )
     }
 
     // Wait 5 seconds before next polling request per provider recommendation
@@ -242,6 +333,8 @@ export async function generateVideo({
   size = '1280x720',
   referenceImage = null,
   referenceImages = null,
+  resolution = null,
+  maxReferenceImages = 10,
   signal = null,
   onHeartbeat = null,
 }) {
@@ -252,6 +345,11 @@ export async function generateVideo({
 
   if (!prompt || !prompt.trim()) {
     throw new Error('Vui lòng nhập mô tả (prompt) cho video!')
+  }
+
+  const selectedRefCount = Array.isArray(referenceImages) ? referenceImages.filter(i => i.selected).length : 0
+  if (selectedRefCount > maxReferenceImages) {
+    throw new Error(`Model ${model} chỉ hỗ trợ tối đa ${maxReferenceImages} ảnh tham chiếu (bạn đang chọn ${selectedRefCount} ảnh).`)
   }
 
   const rawBaseUrl = getBaseUrl() || 'https://tuansuapi.store/v1'
@@ -265,6 +363,11 @@ export async function generateVideo({
     prompt: prompt.trim(),
     seconds: Number(seconds),
     size,
+  }
+
+  // Theo tài liệu: resolution "1080p" (upscale Full HD) chỉ hỗ trợ trên Veo-3.1
+  if (resolution === '1080p') {
+    payload.resolution = '1080p'
   }
 
   if (referenceImages && referenceImages.length > 0) {
@@ -307,24 +410,7 @@ export async function generateVideo({
 
     if (!res.ok) {
       clearTimeout(timeoutId)
-      let errorMsg = `Lỗi máy chủ (${res.status})`
-      try {
-        const errorData = await res.json()
-        errorMsg = errorData?.error?.message || errorData?.message || errorMsg
-      } catch {
-        const text = await res.text()
-        if (text) errorMsg = text.slice(0, 200)
-      }
-
-      if (res.status === 401) {
-        throw new Error('API Key không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại trong phần Cài đặt.')
-      } else if (res.status === 402 || errorMsg.includes('balance') || errorMsg.includes('credit') || errorMsg.includes('quota')) {
-        throw new Error('Số dư tài khoản không đủ để tạo video. Vui lòng nạp thêm tiền tại tuansuapi.store/portal')
-      } else if (res.status === 429) {
-        throw new Error('Hệ thống đang quá tải hoặc bạn đã đạt giới hạn gọi. Vui lòng thử lại sau giây lát.')
-      }
-
-      throw new Error(errorMsg)
+      throw await readApiError(res, 'video')
     }
 
     // Stream reader to capture keepalive \n pulses and ensure the connection doesn't silently freeze
@@ -371,11 +457,7 @@ export async function generateVideo({
     }
 
     if (data.error) {
-      const errMsg = data.error.message || data.error || 'Lỗi không xác định từ máy chủ'
-      if (errMsg.includes('balance') || errMsg.includes('credit') || errMsg.includes('quota')) {
-        throw new Error('Số dư tài khoản không đủ để tạo video. Vui lòng nạp thêm tiền tại tuansuapi.store/portal')
-      }
-      throw new Error(errMsg)
+      throw new Error(describeApiError(0, extractServerError(data.error), 'video'))
     }
 
     // If server queued or is processing the video, automatically poll until completed
@@ -430,6 +512,9 @@ export async function generateVideo({
     }
     if (err.name === 'AbortError' || signal?.aborted) {
       throw new Error('Quá trình tạo video đã được hủy theo yêu cầu.')
+    }
+    if (err instanceof TypeError) {
+      throw new Error(`Không kết nối được tới Gateway (${err.message}). Kiểm tra mạng hoặc Base URL trong Cài đặt.`)
     }
     throw err
   }
@@ -487,7 +572,9 @@ export async function generateImage({
   }
 
   const controller = new AbortController()
+  let isTimedOut = false
   const timeoutId = setTimeout(() => {
+    isTimedOut = true
     controller.abort('Request timed out after 180 seconds')
   }, 180000)
 
@@ -511,30 +598,12 @@ export async function generateImage({
     clearTimeout(timeoutId)
 
     if (!res.ok) {
-      let errorMsg = `Lỗi máy chủ (${res.status})`
-      try {
-        const errorData = await res.json()
-        errorMsg = errorData?.error?.message || errorData?.message || errorMsg
-      } catch {
-        const text = await res.text()
-        if (text) errorMsg = text.slice(0, 200)
-      }
-
-      if (res.status === 401) {
-        throw new Error('API Key không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra lại trong phần Cài đặt.')
-      } else if (res.status === 402 || errorMsg.includes('balance') || errorMsg.includes('credit') || errorMsg.includes('quota')) {
-        throw new Error('Số dư tài khoản không đủ để tạo ảnh. Vui lòng nạp thêm tiền tại tuansuapi.store/portal')
-      } else if (res.status === 429) {
-        throw new Error('Hệ thống đang quá tải hoặc bạn đã đạt giới hạn gọi. Vui lòng thử lại sau giây lát.')
-      }
-
-      throw new Error(errorMsg)
+      throw await readApiError(res, 'image')
     }
 
     const data = await res.json()
     if (data.error) {
-      const errMsg = data.error.message || data.error || 'Lỗi không xác định từ máy chủ'
-      throw new Error(errMsg)
+      throw new Error(describeApiError(0, extractServerError(data.error), 'image'))
     }
 
     let imageUrl = null
@@ -571,8 +640,14 @@ export async function generateImage({
     }
   } catch (err) {
     clearTimeout(timeoutId)
+    if (isTimedOut) {
+      throw new Error('Tạo ảnh quá 180 giây chưa có phản hồi (timeout). Máy chủ có thể đang quá tải, vui lòng thử lại.')
+    }
     if (err.name === 'AbortError' || signal?.aborted) {
       throw new Error('Quá trình tạo ảnh đã được hủy theo yêu cầu.')
+    }
+    if (err instanceof TypeError) {
+      throw new Error(`Không kết nối được tới Gateway (${err.message}). Kiểm tra mạng hoặc Base URL trong Cài đặt.`)
     }
     throw err
   }
@@ -580,7 +655,8 @@ export async function generateImage({
 
 
 /**
- * Validate API Key against chat completion or dummy ping
+ * Kiểm tra API Key bằng GET /v1/balance (chỉ đọc, KHÔNG trừ tiền — theo tài liệu).
+ * Trả về kèm số dư khả dụng nếu có.
  */
 export async function testApiKey(apiKey, customBaseUrl) {
   if (!apiKey || !apiKey.trim()) {
@@ -589,39 +665,41 @@ export async function testApiKey(apiKey, customBaseUrl) {
 
   const rawBaseUrl = customBaseUrl || getBaseUrl() || 'https://tuansuapi.store/v1'
   const cleanBase = rawBaseUrl.replace(/\/+$/, '')
-  const endpoint = `${cleanBase}/chat/completions`
+  const headers = { 'Authorization': `Bearer ${apiKey.trim()}` }
 
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'qwen3.8-flash',
-        messages: [{ role: 'user', content: 'ping' }],
-        max_tokens: 5,
-      })
-    })
+    const res = await fetch(`${cleanBase}/balance`, { method: 'GET', headers, cache: 'no-store' })
 
-    if (res.status === 401) {
-      return { success: false, message: 'API Key không hợp lệ hoặc đã hết hạn (401 Unauthorized)' }
-    }
-
-    if (res.ok || res.status === 400 || res.status === 429) {
-      return { success: true, message: 'Kết nối API Key thành công!' }
-    }
-
-    const data = await res.json().catch(() => null)
-    if (data?.error?.message) {
-      if (data.error.message.includes('balance') || data.error.message.includes('credit')) {
-        return { success: true, message: 'API Key hợp lệ! (Lưu ý: số dư tài khoản sắp hết)' }
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}))
+      if (data.unlimited) {
+        return { success: true, message: 'API Key hợp lệ! Số dư: không giới hạn.' }
       }
-      return { success: false, message: data.error.message }
+      const fmt = (n) => Number(n).toLocaleString('vi-VN')
+      if (data.available_vnd != null) {
+        const reserved = data.reserved_vnd ? ` (đang giữ chỗ ${fmt(data.reserved_vnd)}đ)` : ''
+        const low = data.available_vnd < 2000 ? ' — Số dư thấp, có thể không đủ tạo video.' : ''
+        return { success: true, message: `API Key hợp lệ! Số dư khả dụng: ${fmt(data.available_vnd)}đ${reserved}${low}` }
+      }
+      return { success: true, message: 'API Key hợp lệ!' }
     }
 
-    return { success: true, message: 'API Key đã được xác nhận!' }
+    if (res.status === 409) {
+      return { success: true, message: 'API Key hợp lệ! (Key này không dùng số dư tiền nên không hiển thị số dư.)' }
+    }
+
+    // Base URL khác (vd: cổng Tunnel 2) có thể không có /balance → thử GET /models (cũng miễn phí)
+    if (res.status === 404 || res.status === 405) {
+      const modelsRes = await fetch(`${cleanBase}/models`, { method: 'GET', headers })
+      if (modelsRes.ok) {
+        return { success: true, message: 'API Key hợp lệ! (Base URL này không hỗ trợ xem số dư.)' }
+      }
+      const err = await readApiError(modelsRes, 'balance')
+      return { success: false, message: err.message }
+    }
+
+    const err = await readApiError(res, 'balance')
+    return { success: false, message: err.message }
   } catch (e) {
     return { success: false, message: 'Lỗi kiểm tra kết nối: ' + e.message }
   }

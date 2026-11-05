@@ -9,6 +9,7 @@ export const VIDEO_MODELS = [
     supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
     defaultRatio: '16:9',
     supportsImageToVideo: true,
+    maxReferenceImages: 10,
   },
   {
     id: 'seedance_2.0_fast',
@@ -20,17 +21,21 @@ export const VIDEO_MODELS = [
     supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
     defaultRatio: '16:9',
     supportsImageToVideo: true,
+    maxReferenceImages: 10,
   },
   {
     id: 'Veo-3.1',
     name: 'Veo 3.1',
     tag: 'Google DeepMind',
-    description: 'Model video cao cấp của Google DeepMind',
+    description: 'Model video cao cấp của Google DeepMind, hỗ trợ ảnh đầu (First frame) và upscale 1080p',
     durations: [4, 6, 8],
     defaultDuration: 4,
     supportedRatios: ['16:9', '9:16'],
     defaultRatio: '16:9',
-    supportsImageToVideo: false,
+    supportsImageToVideo: true,
+    maxReferenceImages: 3,
+    // Theo tài liệu: chỉ Veo-3.1 hỗ trợ tham số resolution: "1080p"
+    supportsResolution1080p: true,
   },
   {
     id: 'gemini-omni-flash-preview',
@@ -41,14 +46,15 @@ export const VIDEO_MODELS = [
     defaultDuration: 5,
     supportedRatios: ['16:9', '9:16'],
     defaultRatio: '16:9',
-    supportsImageToVideo: false,
+    supportsImageToVideo: true,
+    maxReferenceImages: 3,
   },
 ]
 
 export const IMAGE_MODELS = [
   {
-    id: 'gemini-3-pro-image-preview',
-    name: 'gemini-3-pro-image-preview (Nano Banana Pro)',
+    id: 'gemini-3-pro-image',
+    name: 'gemini-3-pro-image (Nano Banana Pro)',
     tag: 'Nano Banana Pro',
     description: 'Gemini 3 Pro Image — Siêu phẩm tạo ảnh chân thực, chi tiết cao, hỗ trợ 2K và 4K',
     supportsReference: true,
@@ -61,7 +67,7 @@ export const IMAGE_MODELS = [
     tag: 'Đa năng & Ghép ảnh',
     description: 'Tạo ảnh siêu nét 1024x1024, hỗ trợ sửa ảnh và GHÉP 2+ ẢNH THAM CHIẾU',
     supportsReference: true,
-    supportedResolutions: ['1k', '2k'],
+    supportedResolutions: ['1k'],
     defaultResolution: '1k',
   },
   {
@@ -70,7 +76,7 @@ export const IMAGE_MODELS = [
     tag: 'Flare Nghệ thuật',
     description: 'Dòng Flare ánh sáng rực rỡ, nghệ thuật',
     supportsReference: true,
-    supportedResolutions: ['1k', '2k'],
+    supportedResolutions: ['1k'],
     defaultResolution: '1k',
   },
   {
@@ -79,7 +85,7 @@ export const IMAGE_MODELS = [
     tag: 'Sunburst Điện ảnh',
     description: 'Dòng Sunburst điện ảnh chân thực, chi tiết cao',
     supportsReference: true,
-    supportedResolutions: ['1k', '2k'],
+    supportedResolutions: ['1k'],
     defaultResolution: '1k',
   },
   {
@@ -88,13 +94,14 @@ export const IMAGE_MODELS = [
     tag: 'Nanobanana 2 Siêu tốc',
     description: 'Nanobanana 2 tốc độ cực nhanh, hỗ trợ tham chiếu',
     supportsReference: true,
-    supportedResolutions: ['1k', '2k'],
-    defaultResolution: '2k',
+    supportedResolutions: ['1k'],
+    defaultResolution: '1k',
   },
 ]
 
 export const MODELS = VIDEO_MODELS
 
+// Chỉ dùng các size có trong tài liệu (mục 8.2). Các tỉ lệ 1:1, 3:4, 4:3, 21:9 chỉ có 1 size.
 export const ASPECT_RATIOS = [
   {
     id: '9:16',
@@ -114,8 +121,8 @@ export const ASPECT_RATIOS = [
     shape: 'portrait-compact',
     col: 'left',
     resolutions: {
-      '720p': '720x960',
-      '1080p': '1080x1440',
+      '720p': '768x1024',
+      '1080p': '768x1024',
     },
   },
   {
@@ -125,8 +132,8 @@ export const ASPECT_RATIOS = [
     shape: 'landscape-compact',
     col: 'left',
     resolutions: {
-      '720p': '960x720',
-      '1080p': '1440x1080',
+      '720p': '1024x768',
+      '1080p': '1024x768',
     },
   },
   {
@@ -136,7 +143,7 @@ export const ASPECT_RATIOS = [
     shape: 'square',
     col: 'right',
     resolutions: {
-      '720p': '720x720',
+      '720p': '1024x1024',
       '1080p': '1024x1024',
     },
   },
@@ -159,7 +166,7 @@ export const ASPECT_RATIOS = [
     col: 'right',
     resolutions: {
       '720p': '1680x720',
-      '1080p': '2560x1080',
+      '1080p': '1680x720',
     },
   },
 ]
@@ -297,13 +304,13 @@ export const IMAGE_INSPIRATION_PROMPTS = [
   {
     label: 'Nano Banana Pro Cyber-Dragon',
     prompt: 'Ultra detailed 4K cinematic photo of a mechanical neon cyber dragon coiled around Tokyo tower at midnight, photorealistic, Unreal Engine 5 render',
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-3-pro-image',
     ratio: '16:9',
   },
   {
     label: 'Nano Banana Ultrawide',
     prompt: 'Breathtaking 16:9 cinematic panorama of a neon cyberpunk metropolis in torrential rain, reflections on wet asphalt, volumetric fog, 4k cinematic',
-    model: 'gemini-3-pro-image-preview',
+    model: 'gemini-3-pro-image',
     ratio: '16:9',
   },
   {

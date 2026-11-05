@@ -189,13 +189,19 @@ export default function App() {
         }
 
         const ratioObj = ASPECT_RATIOS.find(r => r.id === effectiveRatio) || ASPECT_RATIOS[0]
-        const size = ratioObj.resolutions[resolution] || ratioObj.resolutions['720p'] || '1280x720'
+        // Veo-3.1: giữ size 720p và gửi resolution: "1080p" để upscale (theo tài liệu).
+        // Model khác: 1080p = size "nét cao" (1792x1024 / 1024x1792) nếu tỉ lệ có hỗ trợ.
+        const useUpscaleParam = currentModelObj.supportsResolution1080p && resolution === '1080p'
+        const sizeKey = useUpscaleParam ? '720p' : resolution
+        const size = ratioObj.resolutions[sizeKey] || ratioObj.resolutions['720p'] || '1280x720'
 
         const result = await generateVideo({
           model,
           prompt,
           seconds,
           size,
+          resolution: useUpscaleParam ? '1080p' : null,
+          maxReferenceImages: currentModelObj.maxReferenceImages ?? 10,
           referenceImage,
           referenceImages,
           signal: controller.signal,
@@ -263,7 +269,7 @@ export default function App() {
           <div className="max-w-2xl mx-auto px-4 mb-6">
             <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              <div className="flex-1"><span className="font-bold">Lỗi khởi tạo: </span>{errorMsg}</div>
+              <div className="flex-1 whitespace-pre-line break-words"><span className="font-bold">Lỗi: </span>{errorMsg}</div>
             </div>
           </div>
         )}

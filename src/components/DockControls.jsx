@@ -162,14 +162,15 @@ export default function DockControls({
     const val = e.target.value
     setCustomDurationInput(val)
     const num = parseInt(val.replace(/\D/g, ''), 10)
-    if (!isNaN(num) && num >= 5 && num <= 30) {
+    // Seedance 2.5 chỉ nhận 5, 10, 15, 20, 25, 30 giây (theo tài liệu)
+    if (!isNaN(num) && num >= 5 && num <= 30 && num % 5 === 0) {
       setSeconds(num)
     }
   }
 
   const handleCustomDurationBlur = () => {
     const num = parseInt(customDurationInput.replace(/\D/g, ''), 10)
-    const valid = isNaN(num) ? 10 : Math.max(5, Math.min(30, num))
+    const valid = isNaN(num) ? 10 : Math.round(Math.max(5, Math.min(30, num)) / 5) * 5
     setSeconds(valid)
     setCustomDurationInput(`${valid}s`)
   }
@@ -177,7 +178,7 @@ export default function DockControls({
   const handleCustomDurationKeyDown = (e) => {
     if (e.key === 'Enter') {
       const num = parseInt(customDurationInput.replace(/\D/g, ''), 10)
-      const valid = isNaN(num) ? 10 : Math.max(5, Math.min(30, num))
+      const valid = isNaN(num) ? 10 : Math.round(Math.max(5, Math.min(30, num)) / 5) * 5
       setSeconds(valid)
       setCustomDurationInput(`${valid}s`)
       setShowDurationMenu(false)
