@@ -1,11 +1,12 @@
 // Seedance (ByteDance) — danh mục mới trên TuanSu (endpoint openai-video, POST /v1/videos).
-// Độ phân giải nằm trong tên model; gửi kèm `resolution` khớp tên và `aspect_ratio` (không gửi size).
+// Độ phân giải nằm trong tên model; tỉ lệ gửi bằng `size` (vd. "1280x720") theo mẫu tài liệu TuanSu,
+// kèm `resolution` khớp tên model (720p/1080p).
 // Giá theo thời lượng lấy từ GET /v1/pricing (VNĐ, tính tại thời điểm cập nhật).
 const SEEDANCE_COMMON = {
   supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
   defaultRatio: '16:9',
   supportsImageToVideo: true,
-  sendAspectRatio: true,
+  sendRatioAsSize: true,
   // Job Seedance có thể render 20–30 phút, đôi khi tới 2 giờ; poll mỗi 20 giây
   pollIntervalMs: 20000,
   maxWaitMs: 2 * 60 * 60 * 1000,

@@ -208,10 +208,10 @@ export default function App() {
         const ratioObj = ASPECT_RATIOS.find(r => r.id === effectiveRatio) || ASPECT_RATIOS[0]
         let size = null
         let videoResolution = null
-        let videoAspectRatio = null
-        if (currentModelObj.sendAspectRatio) {
-          // Seedance mới: aspect_ratio + resolution khớp tên model, không gửi size
-          videoAspectRatio = effectiveRatio
+        if (currentModelObj.sendRatioAsSize) {
+          // Seedance: tỉ lệ gửi bằng size (vd. 16:9 → "1280x720", 9:16 → "720x1280") theo mẫu tài liệu;
+          // độ phân giải thật do tên model quyết định, resolution gửi kèm cho khớp.
+          size = ratioObj.resolutions['720p'] || '1280x720'
           videoResolution = currentModelObj.fixedResolution || null
         } else {
           // Veo-3.1: giữ size 720p và gửi resolution: "1080p" để upscale (theo tài liệu).
@@ -227,7 +227,6 @@ export default function App() {
           prompt,
           seconds,
           size,
-          aspectRatio: videoAspectRatio,
           resolution: videoResolution,
           maxReferenceImages: currentModelObj.maxReferenceImages ?? 10,
           pollIntervalMs: currentModelObj.pollIntervalMs,

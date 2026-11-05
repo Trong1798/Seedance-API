@@ -417,6 +417,9 @@ export async function generateVideo({
     ? referenceImages.filter(i => i.selected).map(img => img.url).filter(Boolean)
     : (typeof referenceImage === 'string' && referenceImage.trim() ? [referenceImage.trim()] : [])
   setInputReference(payload, referenceUrls)
+  // Đã kiểm chứng với TuanSu (Seedance 2.5): có input_reference mà gửi kèm aspect_ratio → HTTP 400.
+  // (Seedance hiện gửi tỉ lệ bằng size nên không còn dùng aspect_ratio.)
+  if (referenceUrls.length > 0) delete payload.aspect_ratio
 
   // Tổng thời gian chờ tối đa (Seedance có thể tới 2 giờ; model khác 15 phút)
   const controller = new AbortController()
