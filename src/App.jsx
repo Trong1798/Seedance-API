@@ -17,8 +17,8 @@ export default function App() {
   const [apiKey, setApiKey] = useState(getApiKey())
   const [mode, setMode] = useState('video') // 'video' | 'image'
   const [prompt, setPrompt] = useState('')
-  const [model, setModel] = useState('seedance_2.5')
-  const [seconds, setSeconds] = useState(10)
+  const [model, setModel] = useState(VIDEO_MODELS[0].id)
+  const [seconds, setSeconds] = useState(VIDEO_MODELS[0].defaultDuration || 5)
   const [aspectRatio, setAspectRatio] = useState('16:9')
   const [resolution, setResolution] = useState('720p')
   const [referenceImage, setReferenceImage] = useState(null)
@@ -47,6 +47,23 @@ export default function App() {
   const [generationStatus, setGenerationStatus] = useState('')
   const abortControllerRef = useRef(null)
 
+  // Model Seedance có độ phân giải cố định trong tên → luôn đồng bộ ô độ phân giải theo model
+  useEffect(() => {
+    if (mode !== 'video') return
+    const m = VIDEO_MODELS.find(v => v.id === model)
+    if (m?.fixedResolution && resolution !== m.fixedResolution) {
+      setResolution(m.fixedResolution)
+    } else if (m && !m.fixedResolution && resolution === '480p') {
+      setResolution('720p')
+    }
+    if (m?.durationRange) {
+      const [min, max] = m.durationRange
+      if (seconds < min || seconds > max) setSeconds(m.defaultDuration)
+    } else if (m && !m.durations.includes(seconds)) {
+      setSeconds(m.defaultDuration)
+    }
+  }, [mode, model, resolution, seconds])
+
   useEffect(() => {
     setSavedVideos(getSavedVideos())
   }, [])
@@ -72,7 +89,7 @@ export default function App() {
         setModel(VIDEO_MODELS[0].id)
       }
       if (resolution === '1k' || resolution === '2k' || resolution === '4k') {
-        setResolution('720p')
+        setResolution(targetModel?.fixedResolution || '720p')
       }
       const supported = targetModel?.supportedRatios || ['16:9', '9:16']
       if (!supported.includes(aspectRatio)) {
@@ -189,19 +206,32 @@ export default function App() {
         }
 
         const ratioObj = ASPECT_RATIOS.find(r => r.id === effectiveRatio) || ASPECT_RATIOS[0]
-        // Veo-3.1: giữ size 720p và gửi resolution: "1080p" để upscale (theo tài liệu).
-        // Model khác: 1080p = size "nét cao" (1792x1024 / 1024x1792) nếu tỉ lệ có hỗ trợ.
-        const useUpscaleParam = currentModelObj.supportsResolution1080p && resolution === '1080p'
-        const sizeKey = useUpscaleParam ? '720p' : resolution
-        const size = ratioObj.resolutions[sizeKey] || ratioObj.resolutions['720p'] || '1280x720'
+        let size = null
+        let videoResolution = null
+        let videoAspectRatio = null
+        if (currentModelObj.sendAspectRatio) {
+          // Seedance mới: aspect_ratio + resolution khớp tên model, không gửi size
+          videoAspectRatio = effectiveRatio
+          videoResolution = currentModelObj.fixedResolution || null
+        } else {
+          // Veo-3.1: giữ size 720p và gửi resolution: "1080p" để upscale (theo tài liệu).
+          // Model khác: 1080p = size "nét cao" (1792x1024 / 1024x1792) nếu tỉ lệ có hỗ trợ.
+          const useUpscaleParam = currentModelObj.supportsResolution1080p && resolution === '1080p'
+          const sizeKey = useUpscaleParam ? '720p' : resolution
+          size = ratioObj.resolutions[sizeKey] || ratioObj.resolutions['720p'] || '1280x720'
+          videoResolution = useUpscaleParam ? '1080p' : null
+        }
 
         const result = await generateVideo({
           model,
           prompt,
           seconds,
           size,
-          resolution: useUpscaleParam ? '1080p' : null,
+          aspectRatio: videoAspectRatio,
+          resolution: videoResolution,
           maxReferenceImages: currentModelObj.maxReferenceImages ?? 10,
+          pollIntervalMs: currentModelObj.pollIntervalMs,
+          maxWaitMs: currentModelObj.maxWaitMs,
           referenceImage,
           referenceImages,
           signal: controller.signal,

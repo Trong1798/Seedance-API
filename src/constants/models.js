@@ -1,27 +1,52 @@
+// Seedance (ByteDance) — danh mục mới trên TuanSu (endpoint openai-video, POST /v1/videos).
+// Độ phân giải nằm trong tên model; gửi kèm `resolution` khớp tên và `aspect_ratio` (không gửi size).
+// Giá theo thời lượng lấy từ GET /v1/pricing (VNĐ, tính tại thời điểm cập nhật).
+const SEEDANCE_COMMON = {
+  supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
+  defaultRatio: '16:9',
+  supportsImageToVideo: true,
+  sendAspectRatio: true,
+  // Job Seedance có thể render 20–30 phút, đôi khi tới 2 giờ; poll mỗi 20 giây
+  pollIntervalMs: 20000,
+  maxWaitMs: 2 * 60 * 60 * 1000,
+}
+
+const SEEDANCE_25 = {
+  ...SEEDANCE_COMMON,
+  family: 'seedance-2.5',
+  durationRange: [4, 30],
+  durations: [4, 5, 10, 15, 20, 25, 30],
+  defaultDuration: 5,
+  maxReferenceImages: 9,
+}
+
 export const VIDEO_MODELS = [
   {
-    id: 'seedance_2.5',
-    name: 'Seedance 2.5',
+    ...SEEDANCE_25,
+    id: 'seedance-2.5-720p',
+    name: 'Seedance 2.5 · 720p',
+    fixedResolution: '720p',
     tag: 'Chất lượng cao',
-    description: 'Chất lượng điện ảnh đỉnh cao, hỗ trợ thời lượng tùy chỉnh từ 5s đến 30s',
-    durations: [5, 10, 15, 20, 25, 30],
-    defaultDuration: 10,
-    supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
-    defaultRatio: '16:9',
-    supportsImageToVideo: true,
-    maxReferenceImages: 10,
+    description: '720p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 20.342đ',
+    pricePerSecond: 4068,
   },
   {
-    id: 'seedance_2.0_fast',
-    name: 'Seedance 2.0 Fast',
-    tag: 'Siêu nhanh',
-    description: 'Tốc độ render cực nhanh, hiệu năng cao',
-    durations: [5, 10, 15],
-    defaultDuration: 5,
-    supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
-    defaultRatio: '16:9',
-    supportsImageToVideo: true,
-    maxReferenceImages: 10,
+    ...SEEDANCE_25,
+    id: 'seedance-2.5-1080p',
+    name: 'Seedance 2.5 · 1080p',
+    fixedResolution: '1080p',
+    tag: 'Full HD',
+    description: '1080p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 49.889đ',
+    pricePerSecond: 9978,
+  },
+  {
+    ...SEEDANCE_25,
+    id: 'seedance-2.5-480p',
+    name: 'Seedance 2.5 · 480p',
+    fixedResolution: '480p',
+    tag: 'Tiết kiệm',
+    description: '480p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 9.033đ',
+    pricePerSecond: 1807,
   },
   {
     id: 'Veo-3.1',
@@ -212,6 +237,7 @@ export const IMAGE_ASPECT_RATIOS = [
 
 
 export const VIDEO_RESOLUTIONS = [
+  { id: '480p', label: '480p', desc: 'Tiết kiệm chi phí' },
   { id: '720p', label: '720p', desc: 'Tiêu chuẩn HD' },
   { id: '1080p', label: '1080p', desc: 'Độ nét cao Full HD' },
 ]
@@ -223,6 +249,18 @@ export const IMAGE_RESOLUTIONS = [
 ]
 
 export const RESOLUTIONS = VIDEO_RESOLUTIONS
+
+/** Ước tính giá (VNĐ) theo số giây cho model có pricePerSecond. */
+export function estimateVideoPrice(modelObj, seconds) {
+  if (!modelObj?.pricePerSecond) return null
+  return Math.round(modelObj.pricePerSecond * Number(seconds || 0))
+}
+
+/** Tìm model cùng dòng (family) với độ phân giải khác, vd. seedance-2.5-720p → seedance-2.5-1080p */
+export function findSiblingModel(modelObj, resolution) {
+  if (!modelObj?.family) return null
+  return VIDEO_MODELS.find(m => m.family === modelObj.family && m.fixedResolution === resolution) || null
+}
 
 export const SHOWCASE_POSTERS = [
   {
@@ -259,42 +297,42 @@ export const INSPIRATION_PROMPTS = [
   {
     label: 'Tokyo Neon Drone',
     prompt: 'Cinematic drone shot flying through futuristic neon Tokyo at night, wet asphalt reflections, hyperrealistic 4k',
-    model: 'seedance_2.5',
+    model: 'seedance-2.5-720p',
     seconds: 10,
     ratio: '16:9'
   },
   {
     label: 'Golden Retriever',
     prompt: 'A cute Golden Retriever puppy running happily in autumn park with falling golden leaves, 4k ultra detailed',
-    model: 'seedance_2.5',
+    model: 'seedance-2.5-720p',
     seconds: 5,
     ratio: '16:9'
   },
   {
     label: 'Cyberpunk Girl',
     prompt: 'Portrait of a cyberpunk girl with glowing holographic cyberware looking gently at falling cherry blossom petals in rainy street',
-    model: 'seedance_2.5',
+    model: 'seedance-2.5-720p',
     seconds: 10,
     ratio: '9:16'
   },
   {
     label: 'Eagle Mountains',
     prompt: 'A majestic eagle soaring gracefully over dramatic snow-capped alpine mountains in golden hour sunlight',
-    model: 'seedance_2.5',
+    model: 'seedance-2.5-720p',
     seconds: 15,
     ratio: '16:9'
   },
   {
     label: 'Futuristic Supercar',
     prompt: 'A sleek futuristic concept supercar speeding on coastal cliff highway at twilight, cinematic camera tracking',
-    model: 'seedance_2.5',
+    model: 'seedance-2.5-720p',
     seconds: 10,
     ratio: '16:9'
   },
   {
     label: 'Ultrawide Sci-Fi Movie',
     prompt: 'Epic anamorphic 21:9 ultrawide shot of a massive starship emerging from a hyperspace nebula above a crimson alien planet, cinematic lighting',
-    model: 'seedance_2.5',
+    model: 'seedance-2.5-720p',
     seconds: 10,
     ratio: '21:9'
   }

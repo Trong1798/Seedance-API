@@ -9,6 +9,8 @@ import {
   IMAGE_RESOLUTIONS,
   INSPIRATION_PROMPTS,
   IMAGE_INSPIRATION_PROMPTS,
+  estimateVideoPrice,
+  findSiblingModel,
 } from '../constants/models'
 
 // Proportional visual frame for each aspect ratio
@@ -158,19 +160,21 @@ export default function DockControls({
     setShowResolutionMenu(false)
   }
 
+  const [minDuration, maxDuration] = currentModel?.durationRange || [5, 30]
+  const clampDuration = (num) => (isNaN(num) ? (currentModel?.defaultDuration || 5) : Math.max(minDuration, Math.min(maxDuration, num)))
+
   const handleCustomDurationChange = (e) => {
     const val = e.target.value
     setCustomDurationInput(val)
     const num = parseInt(val.replace(/\D/g, ''), 10)
-    // Seedance 2.5 chỉ nhận 5, 10, 15, 20, 25, 30 giây (theo tài liệu)
-    if (!isNaN(num) && num >= 5 && num <= 30 && num % 5 === 0) {
+    if (!isNaN(num) && num >= minDuration && num <= maxDuration) {
       setSeconds(num)
     }
   }
 
   const handleCustomDurationBlur = () => {
     const num = parseInt(customDurationInput.replace(/\D/g, ''), 10)
-    const valid = isNaN(num) ? 10 : Math.round(Math.max(5, Math.min(30, num)) / 5) * 5
+    const valid = clampDuration(num)
     setSeconds(valid)
     setCustomDurationInput(`${valid}s`)
   }
@@ -178,7 +182,7 @@ export default function DockControls({
   const handleCustomDurationKeyDown = (e) => {
     if (e.key === 'Enter') {
       const num = parseInt(customDurationInput.replace(/\D/g, ''), 10)
-      const valid = isNaN(num) ? 10 : Math.round(Math.max(5, Math.min(30, num)) / 5) * 5
+      const valid = clampDuration(num)
       setSeconds(valid)
       setCustomDurationInput(`${valid}s`)
       setShowDurationMenu(false)
@@ -196,12 +200,19 @@ export default function DockControls({
     } else {
       const selectedM = VIDEO_MODELS.find(m => m.id === newModelId)
       if (selectedM) {
-        if (selectedM.id === 'seedance_2.5') {
-          if (seconds < 5 || seconds > 30) {
-            setSeconds(selectedM.defaultDuration || 10)
+        if (selectedM.durationRange) {
+          const [min, max] = selectedM.durationRange
+          if (seconds < min || seconds > max) {
+            setSeconds(selectedM.defaultDuration)
+            setCustomDurationInput(`${selectedM.defaultDuration}s`)
           }
         } else if (!selectedM.durations.includes(seconds)) {
           setSeconds(selectedM.defaultDuration)
+        }
+        if (selectedM.fixedResolution) {
+          setResolution(selectedM.fixedResolution)
+        } else if (resolution === '480p') {
+          setResolution('720p')
         }
         const supported = selectedM.supportedRatios || ['16:9', '9:16']
         if (!supported.includes(aspectRatio)) {
@@ -397,7 +408,7 @@ export default function DockControls({
                   ))}
                 </div>
               ) : availableVideoRatios.length > 3 ? (
-                /* Video Mode (Seedance 2.0 / 2.5): 6 Ratios in 2-Column Grid Layout */
+                /* Video Mode (Seedance 2.5): 6 Ratios in 2-Column Grid Layout */
                 <div className="grid grid-cols-2 gap-2 min-w-[220px]">
                   <div className="flex flex-col gap-1">
                     {leftColVideoRatios.map(r => (
@@ -531,7 +542,10 @@ export default function DockControls({
                     )
                   })
                 ) : (
-                  VIDEO_RESOLUTIONS.map(res => {
+                  VIDEO_RESOLUTIONS.filter(res => currentModel?.family
+                    ? Boolean(findSiblingModel(currentModel, res.id))
+                    : res.id !== '480p'
+                  ).map(res => {
                     const isSelected = resolution === res.id
 
                     return (
@@ -539,6 +553,11 @@ export default function DockControls({
                         key={res.id}
                         type="button"
                         onClick={() => {
+                          // Seedance: mỗi độ phân giải là một model riêng → đổi sang model cùng dòng
+                          const sibling = findSiblingModel(currentModel, res.id)
+                          if (sibling) {
+                            handleModelChange(sibling.id)
+                          }
                           setResolution(res.id)
                           setShowResolutionMenu(false)
                         }}
@@ -583,11 +602,11 @@ export default function DockControls({
                 <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pb-2 border-b border-white/[0.08] mb-2.5 flex items-center justify-between">
                   <span>Duration</span>
                   <span className="text-[9px] text-zinc-400/80 font-normal">
-                    {currentModel?.id === 'seedance_2.5' ? '5s - 30s' : `${currentModel?.name || ''}`}
+                    {currentModel?.durationRange ? `${minDuration}s - ${maxDuration}s` : `${currentModel?.name || ''}`}
                   </span>
                 </div>
 
-                {currentModel?.id === 'seedance_2.5' ? (
+                {currentModel?.durationRange ? (
                   /* Custom input matching the user screenshot */
                   <div className="flex flex-col gap-2">
                     <div className="relative">
@@ -604,7 +623,7 @@ export default function DockControls({
                     </div>
                     {/* Quick preset chips */}
                     <div className="flex flex-wrap items-center gap-1 pt-0.5">
-                      {[5, 10, 15, 20, 25, 30].map(s => (
+                      {(currentModel?.durations || [5, 10]).map(s => (
                         <button
                           key={s}
                           type="button"
@@ -623,9 +642,14 @@ export default function DockControls({
                         </button>
                       ))}
                     </div>
+                    {estimateVideoPrice(currentModel, seconds) != null && (
+                      <div className="text-[10px] text-zinc-400 px-0.5">
+                        Ước tính {seconds}s: <span className="text-[#e5ff00] font-semibold">≈ {estimateVideoPrice(currentModel, seconds).toLocaleString('vi-VN')}đ</span>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  /* List of supported durations (Omni Flash: 5s, 10s; Seedance 2.0 Fast: 5s, 10s, 15s; Veo 3.1: 4s, 6s, 8s) */
+                  /* List of supported durations (Omni Flash: 5s, 10s; Veo 3.1: 4s, 6s, 8s) */
                   <div className="flex flex-col gap-1 min-w-[170px]">
                     {(currentModel?.durations || [5]).map(sec => (
                       <button

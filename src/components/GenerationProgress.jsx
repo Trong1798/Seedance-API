@@ -143,7 +143,7 @@ export default function GenerationProgress({
             </span>
           </div>
           <span className="text-[11px] text-zinc-500">
-            {isImageMode ? 'Thời gian tạo ảnh ~5 - 20 giây' : (elapsed > 240 ? 'Đang xếp hàng trên cụm GPU (chưa trừ tiền)' : 'Render trung bình 1 - 3 phút')}
+            {isImageMode ? 'Thời gian tạo ảnh ~5 - 20 giây' : (String(modelName || '').toLowerCase().includes('seedance') ? 'Seedance thường mất 20 - 30 phút, đôi khi tới 2 giờ' : 'Render trung bình 1 - 3 phút')}
           </span>
         </div>
 
@@ -151,7 +151,7 @@ export default function GenerationProgress({
           <div className="mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs">
             <p className="font-semibold mb-0.5">ℹ️ Máy chủ đang có lượng yêu cầu render cao:</p>
             <p className="text-amber-200/80">
-              Yêu cầu của bạn đang nằm trong hàng đợi GPU. Bạn có thể tiếp tục chờ đợi hoặc bấm <span className="font-bold underline cursor-pointer" onClick={onCancel}>Hủy render</span> (hoàn toàn không mất phí) rồi chọn model <strong>Seedance 2.0 Fast (5s)</strong> để tạo nhanh hơn.
+              Yêu cầu của bạn đang được xử lý trên máy chủ. Seedance 2.5 thường mất 20 - 30 phút, đôi khi tới 2 giờ — vui lòng giữ tab mở. Bấm <span className="font-bold underline cursor-pointer" onClick={onCancel}>Dừng chờ</span> chỉ dừng theo dõi trên web; job vẫn có thể tiếp tục chạy và bị tính phí khi hoàn tất.
             </p>
           </div>
         )}

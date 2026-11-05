@@ -257,7 +257,7 @@ export async function fetchVideoBlob(url, apiKey, baseUrl) {
  * Poll task status if server responds asynchronously (status: queued / processing)
  * Following provider workflow: GET /v1/videos/{video_id} every 5s until completed
  */
-export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHeartbeat } = {}) {
+export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHeartbeat, intervalMs = 5000 } = {}) {
   const cleanBase = (baseUrl || getBaseUrl() || 'https://tuansuapi.store/v1').replace(/\/+$/, '')
   const endpoint = `${cleanBase}/videos/${videoId}`
 
@@ -318,8 +318,8 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
       )
     }
 
-    // Wait 5 seconds before next polling request per provider recommendation
-    await new Promise(r => setTimeout(r, 5000))
+    // Seedance khuyến nghị poll mỗi 20 giây; model khác 5 giây
+    await new Promise(r => setTimeout(r, intervalMs))
   }
 }
 
@@ -327,14 +327,17 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
  * Generate video with Seedance 2.5 or other models via POST /v1/videos
  */
 export async function generateVideo({
-  model = 'seedance_2.5',
+  model = 'seedance-2.5-720p',
   prompt,
-  seconds = 10,
-  size = '1280x720',
+  seconds = 5,
+  size = null,
+  aspectRatio = null,
   referenceImage = null,
   referenceImages = null,
   resolution = null,
   maxReferenceImages = 10,
+  pollIntervalMs = 5000,
+  maxWaitMs = 900000,
   signal = null,
   onHeartbeat = null,
 }) {
@@ -362,13 +365,12 @@ export async function generateVideo({
     model,
     prompt: prompt.trim(),
     seconds: Number(seconds),
-    size,
   }
-
-  // Theo tài liệu: resolution "1080p" (upscale Full HD) chỉ hỗ trợ trên Veo-3.1
-  if (resolution === '1080p') {
-    payload.resolution = '1080p'
-  }
+  if (size) payload.size = size
+  if (aspectRatio) payload.aspect_ratio = aspectRatio
+  // Seedance mới: resolution phải khớp hậu tố tên model (480p/720p/1080p).
+  // Veo-3.1: "1080p" để upscale Full HD.
+  if (resolution) payload.resolution = resolution
 
   if (referenceImages && referenceImages.length > 0) {
     const selectedImages = referenceImages.filter(i => i.selected)
@@ -383,13 +385,14 @@ export async function generateVideo({
     payload.input_reference = { image_url: referenceImage.trim() }
   }
 
-  // 900s (15 mins) total timeout for video generation as specified in documentation
+  // Tổng thời gian chờ tối đa (Seedance có thể tới 2 giờ; model khác 15 phút)
   const controller = new AbortController()
   let isTimedOut = false
+  let taskId = null
   const timeoutId = setTimeout(() => {
     isTimedOut = true
-    controller.abort('Request timed out after 900 seconds')
-  }, 900000)
+    controller.abort(`Request timed out after ${Math.round(maxWaitMs / 1000)} seconds`)
+  }, maxWaitMs)
 
   if (signal) {
     signal.addEventListener('abort', () => {
@@ -462,6 +465,7 @@ export async function generateVideo({
 
     // If server queued or is processing the video, automatically poll until completed
     if (['processing', 'queued', 'in_progress', 'pending', 'starting'].includes(data.status) && data.id) {
+      taskId = data.id
       if (onHeartbeat) {
         onHeartbeat({
           timestamp: Date.now(),
@@ -472,6 +476,7 @@ export async function generateVideo({
       data = await pollVideoStatus(data.id, apiKey, cleanBase, {
         signal: controller.signal,
         onHeartbeat,
+        intervalMs: pollIntervalMs,
       })
     }
 
@@ -507,11 +512,15 @@ export async function generateVideo({
     }
   } catch (err) {
     clearTimeout(timeoutId)
+    const jobNote = taskId
+      ? `
+Job ${taskId} vẫn có thể tiếp tục chạy trên máy chủ và bị tính phí khi hoàn tất — kiểm tra bằng GET /v1/videos/${taskId}, đừng tạo lại ngay.`
+      : ''
     if (isTimedOut) {
-      throw new Error('Quá trình tạo video đã vượt quá thời gian tối đa (15 phút). Máy chủ GPU có thể đang quá tải.')
+      throw new Error(`Đã chờ quá ${Math.round(maxWaitMs / 60000)} phút mà video chưa xong. Máy chủ có thể đang quá tải.${jobNote}`)
     }
     if (err.name === 'AbortError' || signal?.aborted) {
-      throw new Error('Quá trình tạo video đã được hủy theo yêu cầu.')
+      throw new Error(`Đã dừng chờ video theo yêu cầu.${jobNote}`)
     }
     if (err instanceof TypeError) {
       throw new Error(`Không kết nối được tới Gateway (${err.message}). Kiểm tra mạng hoặc Base URL trong Cài đặt.`)
