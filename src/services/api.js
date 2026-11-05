@@ -324,6 +324,47 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
 }
 
 /**
+ * Tải ảnh từ link và chuẩn hóa thành JPEG data URL (cạnh dài tối đa maxSide px).
+ * Dùng khi máy chủ không đọc được ảnh qua link (định dạng lạ, ảnh quá lớn, link lỗi...).
+ */
+export async function imageUrlToJpegDataUrl(url, maxSide = 2048, quality = 0.9) {
+  const res = await fetch(url, { credentials: 'omit' })
+  if (!res.ok) throw new Error(`Không tải được ảnh tham chiếu (HTTP ${res.status})`)
+  const blob = await res.blob()
+  const bitmap = await createImageBitmap(blob)
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  const ctx = canvas.getContext('2d')
+  ctx.fillStyle = '#ffffff' // nền trắng cho ảnh PNG trong suốt
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close?.()
+  return canvas.toDataURL('image/jpeg', quality)
+}
+
+function setInputReference(payload, urls) {
+  if (urls.length === 0) delete payload.input_reference
+  else if (urls.length === 1) payload.input_reference = { image_url: urls[0] }
+  else payload.input_reference = urls.map(url => ({ image_url: url }))
+}
+
+function summarizeVideoPayload(payload, refMode) {
+  const refs = payload.input_reference
+  const refCount = Array.isArray(refs) ? refs.length : refs ? 1 : 0
+  return [
+    `model=${payload.model}`,
+    `seconds=${payload.seconds}`,
+    payload.size ? `size=${payload.size}` : '',
+    payload.aspect_ratio ? `aspect_ratio=${payload.aspect_ratio}` : '',
+    payload.resolution ? `resolution=${payload.resolution}` : '',
+    `input_reference=${refCount} ảnh${refCount ? ` (${refMode})` : ''}`,
+    `prompt=${payload.prompt.length} ký tự`,
+  ].filter(Boolean).join(' · ')
+}
+
+/**
  * Generate video with Seedance 2.5 or other models via POST /v1/videos
  */
 export async function generateVideo({
@@ -368,22 +409,14 @@ export async function generateVideo({
   }
   if (size) payload.size = size
   if (aspectRatio) payload.aspect_ratio = aspectRatio
-  // Seedance mới: resolution phải khớp hậu tố tên model (480p/720p/1080p).
-  // Veo-3.1: "1080p" để upscale Full HD.
-  if (resolution) payload.resolution = resolution
+  // Tài liệu TuanSu: resolution chỉ nhận "720p" hoặc "1080p" (phải khớp hậu tố tên model).
+  // Model 480p đã có độ phân giải trong tên nên không gửi resolution.
+  if (resolution === '720p' || resolution === '1080p') payload.resolution = resolution
 
-  if (referenceImages && referenceImages.length > 0) {
-    const selectedImages = referenceImages.filter(i => i.selected)
-    if (selectedImages.length > 0) {
-      if (selectedImages.length === 1) {
-        payload.input_reference = { image_url: selectedImages[0].url }
-      } else {
-        payload.input_reference = selectedImages.map(img => ({ image_url: img.url }))
-      }
-    }
-  } else if (typeof referenceImage === 'string' && referenceImage.trim()) {
-    payload.input_reference = { image_url: referenceImage.trim() }
-  }
+  const referenceUrls = referenceImages && referenceImages.length > 0
+    ? referenceImages.filter(i => i.selected).map(img => img.url).filter(Boolean)
+    : (typeof referenceImage === 'string' && referenceImage.trim() ? [referenceImage.trim()] : [])
+  setInputReference(payload, referenceUrls)
 
   // Tổng thời gian chờ tối đa (Seedance có thể tới 2 giờ; model khác 15 phút)
   const controller = new AbortController()
@@ -400,20 +433,53 @@ export async function generateVideo({
     })
   }
 
+  const postVideo = () => fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey.trim()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    signal: controller.signal,
+  })
+
   try {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    })
+    let refMode = 'link'
+    let res = await postVideo()
+
+    // Máy chủ không đọc được ảnh qua link → chuẩn hóa ảnh thành JPEG base64 rồi gửi lại 1 lần
+    // (lỗi 400 bị từ chối trước khi tạo job nên không bị tính phí)
+    if ((res.status === 400 || res.status === 422) && referenceUrls.length > 0) {
+      const firstErr = await readApiError(res, 'video')
+      onHeartbeat?.({
+        timestamp: Date.now(),
+        message: 'Máy chủ không nhận link ảnh tham chiếu — đang chuẩn hóa ảnh (JPEG base64) và gửi lại...',
+      })
+      let dataUrls
+      try {
+        dataUrls = await Promise.all(referenceUrls.map(url => imageUrlToJpegDataUrl(url)))
+      } catch (convErr) {
+        clearTimeout(timeoutId)
+        firstErr.message += `\nRequest đã gửi: ${summarizeVideoPayload(payload, 'link')}` +
+          `\nKhông chuyển được ảnh sang base64 để thử lại: ${convErr.message}`
+        throw firstErr
+      }
+      setInputReference(payload, dataUrls)
+      refMode = 'base64 JPEG'
+      res = await postVideo()
+    }
 
     if (!res.ok) {
       clearTimeout(timeoutId)
-      throw await readApiError(res, 'video')
+      const err = await readApiError(res, 'video')
+      if (res.status === 400 || res.status === 422) {
+        // Tóm tắt request (không chứa API key) để dò tham số bị từ chối
+        err.message += `\nRequest đã gửi: ${summarizeVideoPayload(payload, refMode)}`
+        if (refMode !== 'link') {
+          err.message += '\nĐã thử gửi ảnh cả dạng link lẫn base64 nhưng vẫn bị từ chối — có thể kích thước/tỉ lệ ảnh không phù hợp với model.'
+        }
+      }
+      throw err
     }
 
     // Stream reader to capture keepalive \n pulses and ensure the connection doesn't silently freeze

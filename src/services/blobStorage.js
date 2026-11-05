@@ -1,3 +1,19 @@
+const MIME_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' }
+
+function toSafeBlobFilename(file) {
+  const rawName = file.name || 'image'
+  const dot = rawName.lastIndexOf('.')
+  const base = dot > 0 ? rawName.slice(0, dot) : rawName
+  const ext = (dot > 0 ? rawName.slice(dot + 1) : MIME_EXT[file.type] || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png'
+  const slug = base
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'image'
+  return `${slug}.${ext}`
+}
+
 /**
  * Upload image to Vercel Blob Storage
  * @param {File} file - Image file to upload
@@ -69,7 +85,9 @@ export function uploadToBlob(file, onProgress = null, signal = null) {
       reject(new Error('Upload ảnh đã bị hủy'))
     })
 
-    xhr.open('POST', `/api/upload?filename=${encodeURIComponent(file.name)}`, true)
+    // Tên file trên Blob chỉ dùng ký tự ASCII (bỏ dấu tiếng Việt, khoảng trắng) để link ảnh
+    // gửi cho máy chủ AI không chứa ký tự mã hóa %XX; tên gốc vẫn được giữ để hiển thị.
+    xhr.open('POST', `/api/upload?filename=${encodeURIComponent(toSafeBlobFilename(file))}`, true)
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
     xhr.send(file)
   })
