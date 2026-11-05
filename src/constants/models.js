@@ -14,6 +14,10 @@ const SEEDANCE_COMMON = {
 const SEEDANCE_25 = {
   ...SEEDANCE_COMMON,
   family: 'seedance-2.5',
+  // Menu chọn model chỉ hiện 1 mục cho cả dòng; độ phân giải chọn ở ô 480p/720p/1080p
+  familyName: 'Seedance 2.5',
+  familyTag: 'ByteDance',
+  familyDescription: '480p / 720p / 1080p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh',
   durationRange: [4, 30],
   durations: [4, 5, 10, 15, 20, 25, 30],
   defaultDuration: 5,
@@ -47,32 +51,6 @@ export const VIDEO_MODELS = [
     tag: 'Tiết kiệm',
     description: '480p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 9.033đ',
     pricePerSecond: 1807,
-  },
-  {
-    id: 'Veo-3.1',
-    name: 'Veo 3.1',
-    tag: 'Google DeepMind',
-    description: 'Model video cao cấp của Google DeepMind, hỗ trợ ảnh đầu (First frame) và upscale 1080p',
-    durations: [4, 6, 8],
-    defaultDuration: 4,
-    supportedRatios: ['16:9', '9:16'],
-    defaultRatio: '16:9',
-    supportsImageToVideo: true,
-    maxReferenceImages: 3,
-    // Theo tài liệu: chỉ Veo-3.1 hỗ trợ tham số resolution: "1080p"
-    supportsResolution1080p: true,
-  },
-  {
-    id: 'gemini-omni-flash-preview',
-    name: 'Gemini Omni Flash',
-    tag: 'Google Omni',
-    description: 'Model video tốc độ cao từ Google Gemini (5s / 10s)',
-    durations: [5, 10],
-    defaultDuration: 5,
-    supportedRatios: ['16:9', '9:16'],
-    defaultRatio: '16:9',
-    supportsImageToVideo: true,
-    maxReferenceImages: 3,
   },
 ]
 

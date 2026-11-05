@@ -264,7 +264,7 @@ export default function DockControls({
             title="Chọn mô hình AI"
           >
             <Sliders className="w-3.5 h-3.5 text-[#e5ff00] shrink-0" />
-            <span className="max-w-[120px] sm:max-w-[160px] truncate">{currentModel.name}</span>
+            <span className="max-w-[120px] sm:max-w-[160px] truncate">{currentModel.familyName || currentModel.name}</span>
             <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${showModelMenu ? 'rotate-180 text-[#e5ff00]' : ''}`} />
           </button>
 
@@ -292,15 +292,22 @@ export default function DockControls({
               {/* Models List */}
               <div className="flex flex-col gap-1 max-h-[260px] overflow-y-auto pr-0.5">
                 {activeModels
+                  // Gộp các model cùng dòng (vd. Seedance 2.5 480p/720p/1080p) thành 1 mục
+                  .filter((m, idx, arr) => !m.family || arr.findIndex(x => x.family === m.family) === idx)
+                  .map(m => (m.family ? { ...m, name: m.familyName || m.name, tag: m.familyTag ?? m.tag, description: m.familyDescription ?? m.description } : m))
                   .filter(m => !modelSearchQuery.trim() || m.name.toLowerCase().includes(modelSearchQuery.toLowerCase()) || m.tag?.toLowerCase().includes(modelSearchQuery.toLowerCase()))
                   .map(m => {
-                    const isSelected = m.id === model
+                    const isSelected = m.family ? m.family === currentModel?.family : m.id === model
                     return (
                       <button
-                        key={m.id}
+                        key={m.family || m.id}
                         type="button"
                         onClick={() => {
-                          handleModelChange(m.id)
+                          if (!isSelected) {
+                            // Giữ độ phân giải đang chọn nếu dòng model mới có hỗ trợ
+                            const sibling = m.family ? findSiblingModel(m, resolution) : null
+                            handleModelChange(sibling?.id || m.id)
+                          }
                           setShowModelMenu(false)
                         }}
                         className={`w-full flex items-start gap-2.5 p-2 rounded-xl text-left transition-all ${
