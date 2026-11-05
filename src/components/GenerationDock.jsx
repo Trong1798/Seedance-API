@@ -39,13 +39,16 @@ export default function GenerationDock({
 
   // Consolidate images list: use selected referenceImages or fallback to single referenceImage
   const selectedRefImages = referenceImages?.filter(img => img.selected) || []
-  const effectiveImages = selectedRefImages.length > 0
+  // Gán nhãn Image1, Image2... theo đúng thứ tự ảnh được gửi trong input_reference
+  const effectiveImages = (selectedRefImages.length > 0
     ? selectedRefImages
     : (referenceImage ? [{ id: 'ref-single', name: 'Image 1', url: referenceImage }] : [])
+  ).map((img, idx) => ({ ...img, label: `Image${idx + 1}` }))
 
-  const filteredMentionImages = effectiveImages.filter(img =>
-    !mentionQuery || img.name.toLowerCase().includes(mentionQuery.toLowerCase())
-  )
+  const filteredMentionImages = effectiveImages.filter(img => {
+    const q = mentionQuery.trim().toLowerCase()
+    return !q || img.label.toLowerCase().includes(q) || img.name.toLowerCase().includes(q)
+  })
 
   // Listen for outside clicks to close mention dropdown
   useEffect(() => {
@@ -115,7 +118,7 @@ export default function GenerationDock({
     const atIndex = textBeforeCursor.lastIndexOf('@')
     if (atIndex !== -1) {
       const prefix = textBeforeCursor.slice(0, atIndex)
-      const mentionTag = `@${img.name} `
+      const mentionTag = `@${img.label} `
       const nextPrompt = `${prefix}${mentionTag}${textAfterCursor}`
       setPrompt(nextPrompt)
       setShowMentionMenu(false)
@@ -128,7 +131,7 @@ export default function GenerationDock({
         }
       }, 0)
     } else {
-      setPrompt(prev => `${prev} @${img.name} `)
+      setPrompt(prev => `${prev} @${img.label} `)
       setShowMentionMenu(false)
     }
   }
@@ -260,8 +263,11 @@ export default function GenerationDock({
                       className="w-full h-full object-cover"
                     />
                     {/* Badge identifier (Image 1, Image 2...) */}
-                    <div className="absolute inset-x-0 bottom-0 bg-black/75 backdrop-blur-xs text-[9px] font-semibold text-center text-zinc-200 py-0.5 truncate px-1 border-t border-white/10">
-                      {img.name}
+                    <div
+                      className="absolute inset-x-0 bottom-0 bg-black/75 backdrop-blur-xs text-[9px] font-semibold text-center text-zinc-200 py-0.5 truncate px-1 border-t border-white/10"
+                      title={img.name}
+                    >
+                      {img.label}
                     </div>
                     {/* Delete hover button */}
                     <button
@@ -271,7 +277,7 @@ export default function GenerationDock({
                         onRemoveReferenceImage(img.id || idx)
                       }}
                       className="absolute top-1 right-1 p-0.5 rounded-full bg-black/80 hover:bg-rose-500 text-white opacity-0 group-hover:opacity-100 transition-all shadow"
-                      title={`Gỡ ${img.name}`}
+                      title={`Gỡ ${img.label} (${img.name})`}
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -331,9 +337,10 @@ export default function GenerationDock({
                                 alt={img.name}
                                 className="w-10 h-10 object-cover rounded-lg border border-white/20 shrink-0 shadow-sm"
                               />
-                              <span className="text-sm font-semibold text-white tracking-wide">
-                                {img.name}
-                              </span>
+                              <div className="min-w-0">
+                                <div className="text-sm font-semibold text-white tracking-wide">@{img.label}</div>
+                                <div className="text-[10px] text-zinc-400 truncate max-w-[180px]">{img.name}</div>
+                              </div>
                             </button>
                           )
                         })
