@@ -323,45 +323,30 @@ export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHear
   }
 }
 
-/**
- * Tải ảnh từ link và chuẩn hóa thành JPEG data URL (cạnh dài tối đa maxSide px).
- * Dùng khi máy chủ không đọc được ảnh qua link (định dạng lạ, ảnh quá lớn, link lỗi...).
- */
-export async function imageUrlToJpegDataUrl(url, maxSide = 2048, quality = 0.9) {
-  const res = await fetch(url, { credentials: 'omit' })
-  if (!res.ok) throw new Error(`Không tải được ảnh tham chiếu (HTTP ${res.status})`)
-  const blob = await res.blob()
-  const bitmap = await createImageBitmap(blob)
-  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(bitmap.width * scale)
-  canvas.height = Math.round(bitmap.height * scale)
-  const ctx = canvas.getContext('2d')
-  ctx.fillStyle = '#ffffff' // nền trắng cho ảnh PNG trong suốt
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  bitmap.close?.()
-  return canvas.toDataURL('image/jpeg', quality)
-}
-
-function setInputReference(payload, urls) {
-  if (urls.length === 0) delete payload.input_reference
-  else if (urls.length === 1) payload.input_reference = { image_url: urls[0] }
-  else payload.input_reference = urls.map(url => ({ image_url: url }))
-}
-
 function summarizeVideoPayload(payload, refMode) {
   const refs = payload.input_reference
   const refCount = Array.isArray(refs) ? refs.length : refs ? 1 : 0
+  const omniCount = payload.reference_image_urls?.length || 0
   return [
     `model=${payload.model}`,
     `seconds=${payload.seconds}`,
     payload.size ? `size=${payload.size}` : '',
     payload.aspect_ratio ? `aspect_ratio=${payload.aspect_ratio}` : '',
     payload.resolution ? `resolution=${payload.resolution}` : '',
-    `input_reference=${refCount} ảnh${refCount ? ` (${refMode})` : ''}`,
+    refCount ? `input_reference=${refCount} ảnh (${refMode})` : '',
+    omniCount ? `reference_image_urls=${omniCount} ảnh (${refMode})` : '',
+    payload.omni_reference_task_type ? `omni_reference_task_type=${payload.omni_reference_task_type}` : '',
+    !refCount && !omniCount ? 'không có ảnh' : '',
     `prompt=${payload.prompt.length} ký tự`,
   ].filter(Boolean).join(' · ')
+}
+
+/**
+ * Đổi thẻ @Image1, @Image2... trong prompt thành <Image 1>, <Image 2>... —
+ * cú pháp gọi ảnh tham chiếu mà TuanSu hướng dẫn cho Seedance.
+ */
+export function toSeedanceImageTags(text) {
+  return text.replace(/@Image(\d+)/gi, (_, n) => `<Image ${n}>`)
 }
 
 /**
@@ -416,10 +401,28 @@ export async function generateVideo({
   const referenceUrls = referenceImages && referenceImages.length > 0
     ? referenceImages.filter(i => i.selected).map(img => img.url).filter(Boolean)
     : (typeof referenceImage === 'string' && referenceImage.trim() ? [referenceImage.trim()] : [])
-  setInputReference(payload, referenceUrls)
-  // Đã kiểm chứng với TuanSu (Seedance 2.5): có input_reference mà gửi kèm aspect_ratio → HTTP 400.
-  // (Seedance hiện gửi tỉ lệ bằng size nên không còn dùng aspect_ratio.)
-  if (referenceUrls.length > 0) delete payload.aspect_ratio
+
+  // Cách gửi ảnh với TuanSu (Seedance 2.5):
+  //  - ≥2 ảnh: input_reference dạng mảng + aspect_ratio — đã kiểm chứng (ảnh ngang → video 9:16).
+  //  - 1 ảnh: input_reference 1 ảnh luôn bị coi là khung hình đầu (gửi kèm tỉ lệ → 400). Theo hướng dẫn của
+  //    admin TuanSu, gửi reference_image_urls + omni_reference_task_type "reference" để vào chế độ tham chiếu
+  //    (omni) và chọn được tỉ lệ. Nếu máy chủ từ chối thì gửi lại kiểu khung hình đầu (không tỉ lệ).
+  // Prompt: thẻ @ImageN được đổi thành <Image N> theo cú pháp TuanSu hướng dẫn.
+  if (referenceUrls.length > 0) payload.prompt = toSeedanceImageTags(payload.prompt)
+  let refMode = 'none'
+  if (referenceUrls.length >= 2) {
+    payload.input_reference = referenceUrls.map(url => ({ image_url: url }))
+    refMode = 'tham chiếu'
+  } else if (referenceUrls.length === 1) {
+    if (payload.aspect_ratio || payload.size) {
+      payload.reference_image_urls = [referenceUrls[0]]
+      payload.omni_reference_task_type = 'reference'
+      refMode = 'omni reference'
+    } else {
+      payload.input_reference = { image_url: referenceUrls[0] }
+      refMode = 'khung hình đầu'
+    }
+  }
 
   // Tổng thời gian chờ tối đa (Seedance có thể tới 2 giờ; model khác 15 phút)
   const controller = new AbortController()
@@ -447,29 +450,30 @@ export async function generateVideo({
   })
 
   try {
-    let refMode = 'link'
     let res = await postVideo()
+    let ratioDropped = false
 
-    // Máy chủ không đọc được ảnh qua link → chuẩn hóa ảnh thành JPEG base64 rồi gửi lại 1 lần
-    // (lỗi 400 bị từ chối trước khi tạo job nên không bị tính phí)
-    if ((res.status === 400 || res.status === 422) && referenceUrls.length > 0) {
-      const firstErr = await readApiError(res, 'video')
+    // 1 ảnh chế độ omni bị từ chối → gửi lại kiểu khung hình đầu, bỏ tỉ lệ (lỗi 400 không bị tính phí)
+    if ((res.status === 400 || res.status === 422) && refMode === 'omni reference') {
+      await readApiError(res, 'video')
       onHeartbeat?.({
         timestamp: Date.now(),
-        message: 'Máy chủ không nhận link ảnh tham chiếu — đang chuẩn hóa ảnh (JPEG base64) và gửi lại...',
+        message: 'Máy chủ không nhận chế độ tham chiếu với 1 ảnh — gửi lại dạng khung hình đầu (video theo tỉ lệ của ảnh)...',
       })
-      let dataUrls
-      try {
-        dataUrls = await Promise.all(referenceUrls.map(url => imageUrlToJpegDataUrl(url)))
-      } catch (convErr) {
-        clearTimeout(timeoutId)
-        firstErr.message += `\nRequest đã gửi: ${summarizeVideoPayload(payload, 'link')}` +
-          `\nKhông chuyển được ảnh sang base64 để thử lại: ${convErr.message}`
-        throw firstErr
-      }
-      setInputReference(payload, dataUrls)
-      refMode = 'base64 JPEG'
+      delete payload.reference_image_urls
+      delete payload.omni_reference_task_type
+      payload.input_reference = { image_url: referenceUrls[0] }
+      delete payload.aspect_ratio
+      delete payload.size
+      refMode = 'khung hình đầu'
+      ratioDropped = true
       res = await postVideo()
+    }
+    if (ratioDropped && res.ok) {
+      onHeartbeat?.({
+        timestamp: Date.now(),
+        message: 'Lưu ý: với 1 ảnh tham chiếu, video sẽ theo tỉ lệ của ảnh. Thêm ảnh thứ 2 để chọn được tỉ lệ.',
+      })
     }
 
     if (!res.ok) {
@@ -478,9 +482,6 @@ export async function generateVideo({
       if (res.status === 400 || res.status === 422) {
         // Tóm tắt request (không chứa API key) để dò tham số bị từ chối
         err.message += `\nRequest đã gửi: ${summarizeVideoPayload(payload, refMode)}`
-        if (refMode !== 'link') {
-          err.message += '\nĐã thử gửi ảnh cả dạng link lẫn base64 nhưng vẫn bị từ chối — có thể kích thước/tỉ lệ ảnh không phù hợp với model.'
-        }
       }
       throw err
     }

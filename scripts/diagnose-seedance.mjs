@@ -6,6 +6,8 @@
 //      node diagnose-seedance.mjs "C:\anh.jpg"
 // 2) Dò cách chọn tỉ lệ video khi có ảnh tham chiếu (thử với 9:16):
 //      node diagnose-seedance.mjs ratio "C:\anh1.jpg" ["C:\anh2.jpg"]
+// 2b) Thử chuyển 1 ảnh sang chế độ omni reference để chọn được tỉ lệ:
+//      node diagnose-seedance.mjs omni "C:\anh.jpg"
 // 3) Xem trạng thái + kích thước thật (rộng x cao) của video đã tạo — MIỄN PHÍ:
 //      node diagnose-seedance.mjs status video_xxx
 //
@@ -19,6 +21,9 @@ const BASE = (process.env.TUANSU_BASE_URL || 'https://tuansuapi.store/v1').repla
 const KEY = process.env.TUANSU_API_KEY
 const MODEL = process.env.SEEDANCE_MODEL || 'seedance-2.5-480p'
 const TARGET_RATIO = process.env.TARGET_RATIO || '9:16'
+// Tùy chọn: $env:PROMPT = "..." để tự đặt prompt; $env:SECONDS = "5" để đổi thời lượng (mặc định 4s cho rẻ)
+const TEST_PROMPT = process.env.PROMPT || 'A cute mascot waving hello, gentle camera push in'
+const TEST_SECONDS = Number(process.env.SECONDS || 4)
 const TARGET_SIZE = { '9:16': '720x1280', '16:9': '1280x720', '1:1': '1024x1024' }[TARGET_RATIO] || '720x1280'
 const auth = { Authorization: `Bearer ${KEY}` }
 const MIME = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' }
@@ -83,11 +88,11 @@ function describe(img, i) {
 }
 
 async function tryVariants(variants) {
-  for (const [label, makeBody, kind] of variants) {
+  for (const [label, makeBody, kind, path = '/videos'] of variants) {
     const headers = kind === 'json' ? { ...auth, 'Content-Type': 'application/json' } : auth
     let res
     try {
-      res = await fetch(`${BASE}/videos`, { method: 'POST', headers, body: makeBody() })
+      res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body: makeBody() })
     } catch (e) {
       console.log(`${label}\n   → lỗi mạng: ${e.message}\n`)
       continue
@@ -166,37 +171,76 @@ async function modeStatus(id) {
 async function modeRatio(inputs) {
   const imgs = await Promise.all(inputs.map(loadImage))
   imgs.forEach((img, i) => console.log(describe(img, i)))
-  console.log(`Model: ${MODEL} · tỉ lệ muốn thử: ${TARGET_RATIO} · base: ${BASE}\n`)
+  console.log(`Model: ${MODEL} · ${TEST_SECONDS}s · tỉ lệ muốn thử: ${TARGET_RATIO}\nPrompt: ${TEST_PROMPT}\n`)
   const [a] = imgs
-  const base = { model: MODEL, prompt: 'A cute mascot waving hello, gentle camera push in', seconds: 4 }
+  const base = { model: MODEL, prompt: TEST_PROMPT, seconds: TEST_SECONDS }
+  const one = { image_url: a.url }
+  const many = imgs.map(i => ({ image_url: i.url }))
+  const json = (label, body, path) => [label, () => JSON.stringify(body), 'json', path]
+  // Thứ tự: các trường tỉ lệ có trong tài liệu (aspect_ratio/size) thử trước — nếu được nhận thì gần như
+  // chắc chắn có tác dụng. Các trường lạ (ratio, metadata) và cách viết trong prompt để cuối, vì máy chủ
+  // có thể nhận nhưng lờ đi (vẫn tính phí) — khi đó cần chạy `status` để kiểm tra kích thước video thật.
   const variants = [
-    [`R1. 1 ảnh + ratio "${TARGET_RATIO}" (tên tham số gốc của Seedance)`,
-      () => JSON.stringify({ ...base, ratio: TARGET_RATIO, input_reference: { image_url: a.url } }), 'json'],
-    [`R2. 1 ảnh + size "${TARGET_SIZE}"`,
-      () => JSON.stringify({ ...base, size: TARGET_SIZE, input_reference: { image_url: a.url } }), 'json'],
-    [`R3. 1 ảnh + metadata.ratio "${TARGET_RATIO}"`,
-      () => JSON.stringify({ ...base, metadata: { ratio: TARGET_RATIO }, input_reference: { image_url: a.url } }), 'json'],
-    [`R4. multipart: upload file + aspect_ratio "${TARGET_RATIO}"`,
+    json(`R1. endpoint phụ /video/generations: 1 ảnh + aspect_ratio "${TARGET_RATIO}"`,
+      { ...base, aspect_ratio: TARGET_RATIO, input_reference: one }, '/video/generations'),
+    json(`R2. endpoint phụ /video/generations: 1 ảnh + size "${TARGET_SIZE}"`,
+      { ...base, size: TARGET_SIZE, input_reference: one }, '/video/generations'),
+    [`R3. multipart: upload file + aspect_ratio "${TARGET_RATIO}"`,
       multipart({ ...base, aspect_ratio: TARGET_RATIO }, [a]), 'multipart'],
-    [`R5. multipart: upload file + ratio "${TARGET_RATIO}"`,
-      multipart({ ...base, ratio: TARGET_RATIO }, [a]), 'multipart'],
+    [`R4. multipart: upload file + size "${TARGET_SIZE}"`,
+      multipart({ ...base, size: TARGET_SIZE }, [a]), 'multipart'],
   ]
   if (imgs.length >= 2) {
     variants.push(
-      [`R6. ${imgs.length} ảnh (mảng) + aspect_ratio "${TARGET_RATIO}"`,
-        () => JSON.stringify({ ...base, aspect_ratio: TARGET_RATIO, input_reference: imgs.map(i => ({ image_url: i.url })) }), 'json'],
-      [`R7. ${imgs.length} ảnh (mảng) + ratio "${TARGET_RATIO}"`,
-        () => JSON.stringify({ ...base, ratio: TARGET_RATIO, input_reference: imgs.map(i => ({ image_url: i.url })) }), 'json'],
+      json(`R5. ${imgs.length} ảnh (mảng) + aspect_ratio "${TARGET_RATIO}"`,
+        { ...base, aspect_ratio: TARGET_RATIO, input_reference: many }),
+      json(`R6. ${imgs.length} ảnh (mảng) + size "${TARGET_SIZE}"`,
+        { ...base, size: TARGET_SIZE, input_reference: many }),
     )
   }
-  return tryVariants(variants)
+  variants.push(
+    json(`R7. 1 ảnh + ratio "${TARGET_RATIO}" (tên tham số gốc của Seedance — có thể bị lờ đi)`,
+      { ...base, ratio: TARGET_RATIO, input_reference: one }),
+    json(`R8. 1 ảnh + metadata.ratio "${TARGET_RATIO}" (có thể bị lờ đi)`,
+      { ...base, metadata: { ratio: TARGET_RATIO }, input_reference: one }),
+    json(`R9. 1 ảnh + tỉ lệ viết trong prompt "--ratio ${TARGET_RATIO}" (chắc chắn được nhận, cần kiểm tra kết quả)`,
+      { ...base, prompt: `${base.prompt} --ratio ${TARGET_RATIO}`, input_reference: one }),
+  )
+  // SKIP=R1,R7 để bỏ qua các cách đã thử
+  const skip = (process.env.SKIP || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+  return tryVariants(variants.filter(([label]) => !skip.includes(label.split('.')[0].toUpperCase())))
+}
+
+// Thử chuyển 1 ảnh sang chế độ "omni reference" (như plenxai gửi mode: "omni") để chọn được tỉ lệ.
+// Mọi cách đều là 1 ảnh + aspect_ratio — tổ hợp đã biết chắc bị 400 nếu máy chủ bỏ qua trường mới,
+// nên cách nào được nhận (HTTP 200) nghĩa là trường đó thật sự có tác dụng.
+async function modeOmni(input) {
+  const img = await loadImage(input)
+  console.log(describe(img, 0))
+  console.log(`Model: ${MODEL} · ${TEST_SECONDS}s · tỉ lệ muốn thử: ${TARGET_RATIO}\nPrompt: ${TEST_PROMPT}\n`)
+  const base = { model: MODEL, prompt: TEST_PROMPT, seconds: TEST_SECONDS, aspect_ratio: TARGET_RATIO }
+  const one = { image_url: img.url }
+  const json = (label, body) => [label, () => JSON.stringify(body), 'json']
+  const variants = [
+    json('O0. reference_image_urls + omni_reference_task_type "reference" (theo admin TuanSu)',
+      { ...base, prompt: base.prompt.replace(/@Image(\d+)/gi, '<Image $1>'), reference_image_urls: [img.url], omni_reference_task_type: 'reference' }),
+    json('O1. mode "omni"', { ...base, mode: 'omni', input_reference: one }),
+    json('O2. mode "omni" + input_reference dạng mảng', { ...base, mode: 'omni', input_reference: [one] }),
+    json('O3. mode "omni_reference"', { ...base, mode: 'omni_reference', input_reference: one }),
+    json('O4. mode "reference"', { ...base, mode: 'reference', input_reference: one }),
+    json('O5. reference_mode "omni"', { ...base, reference_mode: 'omni', input_reference: one }),
+    json('O6. metadata.mode "omni"', { ...base, metadata: { mode: 'omni' }, input_reference: one }),
+    json('O7. 1 ảnh gửi 2 lần (cách web đang dùng)', { ...base, input_reference: [one, one] }),
+  ]
+  const skip = (process.env.SKIP || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean)
+  return tryVariants(variants.filter(([label]) => !skip.includes(label.split('.')[0].toUpperCase())))
 }
 
 async function modeFormat(input) {
   const img = await loadImage(input)
   console.log(describe(img, 0))
   console.log(`Model: ${MODEL} · base: ${BASE}\n`)
-  const base = { model: MODEL, prompt: 'A cute mascot waving hello, gentle camera push in', seconds: 4 }
+  const base = { model: MODEL, prompt: TEST_PROMPT, seconds: TEST_SECONDS }
   const u = img.url
   const json = (label, body) => [label, () => JSON.stringify(body), 'json']
   return tryVariants([
@@ -222,6 +266,7 @@ async function main() {
   }
   if (first === 'status') return modeStatus(rest[0])
   if (first === 'ratio') return modeRatio(rest)
+  if (first === 'omni') return modeOmni(rest[0])
   return modeFormat(first)
 }
 
