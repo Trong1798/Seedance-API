@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { put, del } from '@vercel/blob'
+import { proxySeedance } from './api/_seedance-proxy.js'
 
 // Plugin to support Vercel Blob API routes in Vite dev server (npm run dev)
 function vercelBlobDevPlugin(env) {
@@ -11,6 +12,18 @@ function vercelBlobDevPlugin(env) {
       server.middlewares.use(async (req, res, next) => {
         const parsedUrl = new URL(req.url, 'http://localhost:5173')
         const token = env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN
+
+        // Lớp trung gian Seedance (giống api/sd.js trên Vercel)
+        if (parsedUrl.pathname.startsWith('/api/sd/')) {
+          try {
+            await proxySeedance(req, res, parsedUrl.pathname.slice('/api/sd/'.length), parsedUrl.searchParams)
+          } catch (err) {
+            res.statusCode = 500
+            res.setHeader('Content-Type', 'application/json')
+            res.end(JSON.stringify({ error: 'proxy_error', message: err.message }))
+          }
+          return
+        }
 
         if (parsedUrl.pathname === '/api/upload' && req.method === 'POST') {
           const filename = parsedUrl.searchParams.get('filename') || `image-${Date.now()}.png`
@@ -71,20 +84,6 @@ export default defineConfig(({ mode }) => {
     ],
     server: {
       port: 5173,
-      proxy: {
-        '/api': {
-          target: 'https://tuansuapi.store/v1',
-          changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api/, ''),
-          bypass: (req) => {
-            if (req.url && (req.url.startsWith('/api/upload') || req.url.startsWith('/api/delete'))) {
-              return req.url
-            }
-          },
-          timeout: 900000,
-          proxyTimeout: 900000,
-        }
-      }
     }
   }
 })

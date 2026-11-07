@@ -9,8 +9,6 @@ import {
   IMAGE_RESOLUTIONS,
   INSPIRATION_PROMPTS,
   IMAGE_INSPIRATION_PROMPTS,
-  estimateVideoPrice,
-  findSiblingModel,
 } from '../constants/models'
 
 // Proportional visual frame for each aspect ratio
@@ -191,13 +189,7 @@ export default function DockControls({
 
   const handleModelChange = (newModelId) => {
     setModel(newModelId)
-    if (isImageMode) {
-      const selectedM = IMAGE_MODELS.find(m => m.id === newModelId)
-      const supported = selectedM?.supportedResolutions || ['1k']
-      if (!supported.includes(resolution)) {
-        setResolution(selectedM?.defaultResolution || (supported.includes('2k') ? '2k' : '1k'))
-      }
-    } else {
+    if (!isImageMode) {
       const selectedM = VIDEO_MODELS.find(m => m.id === newModelId)
       if (selectedM) {
         if (selectedM.durationRange) {
@@ -209,10 +201,8 @@ export default function DockControls({
         } else if (!selectedM.durations.includes(seconds)) {
           setSeconds(selectedM.defaultDuration)
         }
-        if (selectedM.fixedResolution) {
-          setResolution(selectedM.fixedResolution)
-        } else if (resolution === '480p') {
-          setResolution('720p')
+        if (selectedM.supportedResolutions && !selectedM.supportedResolutions.includes(resolution)) {
+          setResolution(selectedM.defaultResolution || '720p')
         }
         const supported = selectedM.supportedRatios || ['16:9', '9:16']
         if (!supported.includes(aspectRatio)) {
@@ -293,11 +283,7 @@ export default function DockControls({
                         key={m.family || m.id}
                         type="button"
                         onClick={() => {
-                          if (!isSelected) {
-                            // Giữ độ phân giải đang chọn nếu dòng model mới có hỗ trợ
-                            const sibling = m.family ? findSiblingModel(m, resolution) : null
-                            handleModelChange(sibling?.id || m.id)
-                          }
+                          if (!isSelected) handleModelChange(m.id)
                           setShowModelMenu(false)
                         }}
                         className={`w-full flex items-start gap-2.5 p-2 rounded-xl text-left transition-all ${
@@ -479,7 +465,8 @@ export default function DockControls({
           )}
         </div>
 
-        {/* Resolution Popover (Visible for BOTH Image & Video) */}
+        {/* Resolution Popover (chỉ video — API tạo ảnh không có tham số độ phân giải) */}
+        {!isImageMode && (
         <div className="relative" ref={resolutionMenuRef}>
           <button
             type="button"
@@ -539,10 +526,7 @@ export default function DockControls({
                     )
                   })
                 ) : (
-                  VIDEO_RESOLUTIONS.filter(res => currentModel?.family
-                    ? Boolean(findSiblingModel(currentModel, res.id))
-                    : res.id !== '480p'
-                  ).map(res => {
+                  VIDEO_RESOLUTIONS.filter(res => (currentModel?.supportedResolutions || ['720p', '1080p']).includes(res.id)).map(res => {
                     const isSelected = resolution === res.id
 
                     return (
@@ -550,11 +534,6 @@ export default function DockControls({
                         key={res.id}
                         type="button"
                         onClick={() => {
-                          // Seedance: mỗi độ phân giải là một model riêng → đổi sang model cùng dòng
-                          const sibling = findSiblingModel(currentModel, res.id)
-                          if (sibling) {
-                            handleModelChange(sibling.id)
-                          }
                           setResolution(res.id)
                           setShowResolutionMenu(false)
                         }}
@@ -577,6 +556,7 @@ export default function DockControls({
             </div>
           )}
         </div>
+        )}
 
         {/* Duration Popover (HIDDEN IN IMAGE MODE as requested) */}
         {!isImageMode && (
@@ -639,11 +619,6 @@ export default function DockControls({
                         </button>
                       ))}
                     </div>
-                    {estimateVideoPrice(currentModel, seconds) != null && (
-                      <div className="text-[10px] text-zinc-400 px-0.5">
-                        Ước tính {seconds}s: <span className="text-[#e5ff00] font-semibold">≈ {estimateVideoPrice(currentModel, seconds).toLocaleString('vi-VN')}đ</span>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   /* List of supported durations (Omni Flash: 5s, 10s; Veo 3.1: 4s, 6s, 8s) */

@@ -8,12 +8,8 @@ export const STORAGE_KEYS = {
   REFERENCE_IMAGES: 'seedance_reference_images',
 }
 
-export const DEFAULT_BASE_URL = 'https://tuansuapi.store/v1'
-
-export const API_HOST_PRESETS = [
-  { label: 'Tuan Su API (Mặc định)', url: 'https://tuansuapi.store/v1', host: 'tuansuapi.store' },
-  { label: 'Xompet Gateway (Dự phòng)', url: 'https://api.xompet.io.vn/v1', host: 'api.xompet.io.vn' },
-]
+// Seedance Creation Bot API — web gọi qua lớp trung gian /api/sd (xem api/sd.js)
+export const DEFAULT_BASE_URL = '/api/sd/v1'
 
 export function getApiKey() {
   return localStorage.getItem(STORAGE_KEYS.API_KEY) || ''
@@ -28,15 +24,7 @@ export function setApiKey(key) {
 }
 
 export function getBaseUrl() {
-  return localStorage.getItem(STORAGE_KEYS.BASE_URL) || DEFAULT_BASE_URL
-}
-
-export function setBaseUrl(url) {
-  if (!url) {
-    localStorage.setItem(STORAGE_KEYS.BASE_URL, DEFAULT_BASE_URL)
-  } else {
-    localStorage.setItem(STORAGE_KEYS.BASE_URL, url.trim().replace(/\/$/, ''))
-  }
+  return DEFAULT_BASE_URL
 }
 
 export function getReferenceImages() {
@@ -57,49 +45,27 @@ export function saveReferenceImages(images) {
   }
 }
 
+// Bỏ ?key=... khỏi link trước khi lưu lịch sử; khi hiển thị, web tự gắn lại key hiện tại
+function stripKey(url) {
+  if (!url || typeof url !== 'string' || url.startsWith('data:') || url.startsWith('blob:')) return url
+  return url.replace(/([?&])key=[^&]*(&?)/g, (_, p1, p2) => (p2 ? p1 : '')).replace(/[?&]$/, '')
+}
+
 export function getSavedVideos() {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.SAVED_VIDEOS)
     const list = raw ? JSON.parse(raw) : []
-    const currentBase = getBaseUrl() || DEFAULT_BASE_URL
-    let host = 'https://tuansuapi.store'
-    try {
-      host = new URL(currentBase).origin
-    } catch {}
-
     return list.map(v => {
-      let url = v.url
-      if (url) {
-        if (url.startsWith('/')) {
-          url = `${host}${url}`
-        } else if (url.includes('localhost:') && url.includes('/v1/')) {
-          url = `${host}${url.substring(url.indexOf('/v1/'))}`
-        }
-      }
-
       const modelStr = String(v.model || '').toLowerCase()
+      const url = v.url
       const isImg = v.mediaType === 'image' ||
-        modelStr.includes('image') ||
-        modelStr.includes('banana') ||
-        modelStr.includes('flare') ||
-        modelStr.includes('sunburst') ||
-        (url && (/\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(url) || url.includes('img.apimatou.cc') || url.startsWith('data:image')))
-
-      let directUrl = v.directUrl
-      if (isImg) {
-        if (url && typeof url === 'string' && !url.startsWith('data:') && !url.startsWith('blob:')) {
-          url = url.replace(/[?&]key=[^&]+/g, '').replace(/[?&]variant=[^&]+/g, '').replace(/\?$/, '')
-        }
-        if (directUrl && typeof directUrl === 'string' && !directUrl.startsWith('data:') && !directUrl.startsWith('blob:')) {
-          directUrl = directUrl.replace(/[?&]key=[^&]+/g, '').replace(/[?&]variant=[^&]+/g, '').replace(/\?$/, '')
-        }
-      }
-
+        /image|banana|seedream|flare|sunburst/.test(modelStr) ||
+        (url && (/\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(url) || url.includes('/v1/images/') || url.startsWith('data:image')))
       return {
         ...v,
         mediaType: isImg ? 'image' : (v.mediaType || 'video'),
         url,
-        directUrl: directUrl || url,
+        directUrl: v.directUrl || url,
       }
     })
   } catch (e) {
@@ -111,17 +77,11 @@ export function getSavedVideos() {
 export function saveVideoToHistory(videoItem) {
   try {
     const list = getSavedVideos()
-    // Do not persist transient blob URLs in localStorage
+    // Không lưu blob: (chỉ sống trong phiên) và không lưu API key trong link
     const { blobUrl, ...persistable } = videoItem
-    const currentBase = getBaseUrl() || DEFAULT_BASE_URL
-    let host = 'https://tuansuapi.store'
-    try {
-      host = new URL(currentBase).origin
-    } catch {}
-
-    if (persistable.url && persistable.url.startsWith('/')) {
-      persistable.url = `${host}${persistable.url}`
-    }
+    persistable.url = stripKey(persistable.url)
+    persistable.directUrl = stripKey(persistable.directUrl)
+    if (Array.isArray(persistable.allImages)) persistable.allImages = persistable.allImages.map(stripKey)
     const updated = [persistable, ...list.filter(v => v.id !== videoItem.id)].slice(0, 50)
     localStorage.setItem(STORAGE_KEYS.SAVED_VIDEOS, JSON.stringify(updated))
     return updated

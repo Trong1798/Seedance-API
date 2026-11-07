@@ -10,7 +10,7 @@ import HistoryModal from './components/HistoryModal'
 import { getApiKey, getSavedVideos, saveVideoToHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
 import { generateVideo, generateImage } from './services/api'
 import { deleteFromBlob } from './services/blobStorage'
-import { VIDEO_MODELS, IMAGE_MODELS, ASPECT_RATIOS, IMAGE_ASPECT_RATIOS } from './constants/models'
+import { VIDEO_MODELS, IMAGE_MODELS, IMAGE_ASPECT_RATIOS } from './constants/models'
 import { AlertCircle } from 'lucide-react'
 
 export default function App() {
@@ -47,22 +47,15 @@ export default function App() {
   const [generationStatus, setGenerationStatus] = useState('')
   const abortControllerRef = useRef(null)
 
-  // Model Seedance có độ phân giải cố định trong tên → luôn đồng bộ ô độ phân giải theo model
+  // Giữ độ phân giải / thời lượng / tỉ lệ luôn nằm trong danh sách model hỗ trợ
   useEffect(() => {
     if (mode !== 'video') return
     const m = VIDEO_MODELS.find(v => v.id === model)
-    if (m?.fixedResolution && resolution !== m.fixedResolution) {
-      setResolution(m.fixedResolution)
-    } else if (m && !m.fixedResolution && resolution === '480p') {
-      setResolution('720p')
-    }
-    if (m?.durationRange) {
-      const [min, max] = m.durationRange
-      if (seconds < min || seconds > max) setSeconds(m.defaultDuration)
-    } else if (m && !m.durations.includes(seconds)) {
-      setSeconds(m.defaultDuration)
-    }
-  }, [mode, model, resolution, seconds])
+    if (!m) return
+    if (m.supportedResolutions && !m.supportedResolutions.includes(resolution)) setResolution(m.defaultResolution)
+    if (!m.durations.includes(seconds)) setSeconds(m.defaultDuration)
+    if (!m.supportedRatios.includes(aspectRatio)) setAspectRatio(m.defaultRatio)
+  }, [mode, model, resolution, seconds, aspectRatio])
 
   useEffect(() => {
     setSavedVideos(getSavedVideos())
@@ -76,9 +69,6 @@ export default function App() {
       if (!isImgModel) {
         setModel(IMAGE_MODELS[0].id)
       }
-      if (resolution === '720p' || resolution === '1080p') {
-        setResolution(targetModel?.defaultResolution || '2k')
-      }
       if (!IMAGE_ASPECT_RATIOS.some(r => r.id === aspectRatio)) {
         setAspectRatio('16:9')
       }
@@ -88,8 +78,8 @@ export default function App() {
       if (!isVidModel) {
         setModel(VIDEO_MODELS[0].id)
       }
-      if (resolution === '1k' || resolution === '2k' || resolution === '4k') {
-        setResolution(targetModel?.fixedResolution || '720p')
+      if (!targetModel?.supportedResolutions?.includes(resolution)) {
+        setResolution(targetModel?.defaultResolution || '720p')
       }
       const supported = targetModel?.supportedRatios || ['16:9', '9:16']
       if (!supported.includes(aspectRatio)) {
@@ -161,29 +151,13 @@ export default function App() {
     try {
       if (mode === 'image') {
         const currentModelObj = IMAGE_MODELS.find(m => m.id === model) || IMAGE_MODELS[0]
-        const supportedResolutions = currentModelObj.supportedResolutions || ['1k', '2k']
-
-        let effectiveRes = resolution
-        // Fallback to highest supported resolution if model does not support current resolution (e.g. 4k)
-        if (!supportedResolutions.includes(effectiveRes)) {
-          effectiveRes = supportedResolutions.includes('2k') ? '2k' : '1k'
-        }
-
-        const ratioObj = IMAGE_ASPECT_RATIOS.find(r => r.id === aspectRatio) || IMAGE_ASPECT_RATIOS[0]
-        let size = ratioObj.sizes?.[effectiveRes]
-
-        // For standard models requiring standard gateway sizes (1024x1024, 1792x1024, 1024x1792)
-        if (model.startsWith('gpt-image-2') || model === 'gemini-3.1-flash-image-preview') {
-          size = ratioObj.fallbackSize || '1024x1024'
-        }
-        if (!size) {
-          size = ratioObj.fallbackSize || '1024x1024'
-        }
+        const ratio = IMAGE_ASPECT_RATIOS.some(r => r.id === aspectRatio) ? aspectRatio : null
 
         const result = await generateImage({
-          model,
+          model: currentModelObj.id,
           prompt,
-          size,
+          aspectRatio: ratio,
+          maxReferenceImages: currentModelObj.maxReferenceImages ?? 6,
           referenceImage,
           referenceImages,
           signal: controller.signal,
@@ -205,31 +179,18 @@ export default function App() {
           effectiveRatio = currentModelObj.defaultRatio || '16:9'
         }
 
-        const ratioObj = ASPECT_RATIOS.find(r => r.id === effectiveRatio) || ASPECT_RATIOS[0]
-        let size = null
-        let videoResolution = null
-        let videoAspectRatio = null
-        if (currentModelObj.sendAspectRatio) {
-          // Seedance: tỉ lệ gửi bằng aspect_ratio; độ phân giải do tên model quyết định, resolution gửi kèm cho khớp.
-          videoAspectRatio = effectiveRatio
-          videoResolution = currentModelObj.fixedResolution || null
-        } else {
-          // Veo-3.1: giữ size 720p và gửi resolution: "1080p" để upscale (theo tài liệu).
-          // Model khác: 1080p = size "nét cao" (1792x1024 / 1024x1792) nếu tỉ lệ có hỗ trợ.
-          const useUpscaleParam = currentModelObj.supportsResolution1080p && resolution === '1080p'
-          const sizeKey = useUpscaleParam ? '720p' : resolution
-          size = ratioObj.resolutions[sizeKey] || ratioObj.resolutions['720p'] || '1280x720'
-          videoResolution = useUpscaleParam ? '1080p' : null
-        }
+        const effectiveResolution = currentModelObj.supportedResolutions?.includes(resolution)
+          ? resolution
+          : currentModelObj.defaultResolution
+        const effectiveSeconds = currentModelObj.durations.includes(seconds) ? seconds : currentModelObj.defaultDuration
 
         const result = await generateVideo({
-          model,
+          model: currentModelObj.id,
           prompt,
-          seconds,
-          size,
-          aspectRatio: videoAspectRatio,
-          resolution: videoResolution,
-          maxReferenceImages: currentModelObj.maxReferenceImages ?? 10,
+          seconds: effectiveSeconds,
+          aspectRatio: effectiveRatio,
+          resolution: effectiveResolution,
+          maxReferenceImages: currentModelObj.maxReferenceImages ?? 30,
           pollIntervalMs: currentModelObj.pollIntervalMs,
           maxWaitMs: currentModelObj.maxWaitMs,
           referenceImage,
@@ -331,7 +292,7 @@ export default function App() {
       </main>
 
       <footer className="border-t border-zinc-800/80 py-6 text-center text-xs text-zinc-500">
-        <p>Seedance 2.5 Cinema Studio • Tuan Su API Gateway</p>
+        <p>Seedance 2.5 Cinema Studio • Seedance Creation Bot API</p>
         <p className="text-[11px] text-zinc-600 mt-1">API Key lưu trữ cục bộ tại trình duyệt (LocalStorage)</p>
       </footer>
 

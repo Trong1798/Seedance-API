@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Download, Copy, Check, ExternalLink, Sparkles, X, Share2, Film, Loader2, RefreshCw, AlertCircle, Terminal, Code2, Eye } from 'lucide-react'
-import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab } from '../services/api'
+import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab, SEEDANCE_UPSTREAM } from '../services/api'
 import { getApiKey } from '../services/storage'
 import MediaLightbox from './MediaLightbox'
 
@@ -20,8 +20,11 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
 
   const isImage = isMediaImage(video)
   const effectiveKey = apiKey || getApiKey()
-  const cleanUrl = isImage ? getDirectImageUrl(video.url) : resolveVideoUrl(video.url)
-  const directUrl = isImage ? cleanUrl : (video.directUrl || getDirectVideoUrl(video.url, effectiveKey))
+  // Link qua lớp trung gian /api/sd cần ?key= để thẻ <img>/<video> tải được; key luôn lấy từ Cài đặt hiện tại
+  const cleanUrl = isImage ? getDirectImageUrl(video.url, effectiveKey) : resolveVideoUrl(video.url)
+  const directUrl = isImage ? cleanUrl : getDirectVideoUrl(video.url || video.directUrl, effectiveKey)
+  // Link gốc của máy chủ Seedance (dùng trong đoạn code mẫu)
+  const upstreamUrl = String(resolveVideoUrl(video.url) || '').replace(/^\/api\/sd/, SEEDANCE_UPSTREAM).replace(/[?&]key=[^&]*/g, '')
   const [actualDimensions, setActualDimensions] = useState(null)
 
   // Use direct stream URL as primary source for native streaming, with blob fallback
@@ -62,7 +65,7 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
 
   const handleCopyLink = () => {
     // Copy the authenticated direct link so user can open in any browser
-    navigator.clipboard.writeText(directUrl || cleanUrl)
+    navigator.clipboard.writeText(upstreamUrl || cleanUrl)
     setCopiedLink(true)
     setTimeout(() => setCopiedLink(false), 2000)
   }
@@ -137,24 +140,17 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
     openMediaInNewTab(targetUrl, video?.prompt ? `Seedance - ${video.prompt.slice(0, 30)}...` : (isImage ? 'Seedance Image' : 'Seedance Video'))
   }
 
-  const pythonSnippet = isImage
-    ? `# Cách tải ảnh bằng Python:
+  // Không đưa key thật vào đoạn code (chỉ hiện vài ký tự đầu)
+  const maskedKey = effectiveKey ? `${effectiveKey.slice(0, 8)}...` : '<API_KEY>'
+  const pythonSnippet = `# Cách tải ${isImage ? 'ảnh' : 'video'} bằng Python (Seedance Creation Bot API):
 import requests
 
-url = "${cleanUrl}"
-response = requests.get(url)
-with open("seedance_image_${video.id || 'output'}.png", "wb") as f:
-    f.write(response.content)
-print("Tải ảnh thành công!")`
-    : `# Cách tải video bằng Python theo tài liệu TuanSu API:
-import requests
-
-url = "${cleanUrl}"
-headers = {"Authorization": "Bearer ${effectiveKey ? effectiveKey.slice(0, 10) + '...' : '<API_KEY>'}"}
+url = "${upstreamUrl}"
+headers = {"Authorization": "Bearer ${maskedKey}"}  # thay bằng API key đầy đủ của bạn
 response = requests.get(url, headers=headers)
-with open("seedance_${video.id || 'video'}.mp4", "wb") as f:
+with open("seedance_${video.id || 'output'}.${isImage ? 'png' : 'mp4'}", "wb") as f:
     f.write(response.content)
-print("Tải video thành công!")`
+print("Tải thành công!")`
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(pythonSnippet)
@@ -255,7 +251,7 @@ print("Tải video thành công!")`
           <div className="flex items-center gap-1.5 truncate">
             <span className="w-1.5 h-1.5 rounded-full bg-[#e5ff00] shrink-0" />
             <span className="truncate font-mono text-[10px] text-zinc-300">
-              {directUrl || cleanUrl}
+              {upstreamUrl || cleanUrl}
             </span>
           </div>
           <button

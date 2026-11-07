@@ -1,107 +1,41 @@
-// Seedance (ByteDance) — danh mục mới trên TuanSu (endpoint openai-video, POST /v1/videos).
-// Độ phân giải nằm trong tên model; tỉ lệ gửi bằng `aspect_ratio`, kèm `resolution` khớp tên (720p/1080p).
-// Đã kiểm chứng: aspect_ratio dùng được khi không có ảnh hoặc có ≥2 ảnh tham chiếu (xem generateVideo).
-// Giá theo thời lượng lấy từ GET /v1/pricing (VNĐ, tính tại thời điểm cập nhật).
-const SEEDANCE_COMMON = {
-  supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
-  defaultRatio: '16:9',
-  supportsImageToVideo: true,
-  sendAspectRatio: true,
-  // Job Seedance có thể render 20–30 phút, đôi khi tới 2 giờ; poll mỗi 20 giây
-  pollIntervalMs: 20000,
-  maxWaitMs: 2 * 60 * 60 * 1000,
-}
-
-const SEEDANCE_25 = {
-  ...SEEDANCE_COMMON,
-  family: 'seedance-2.5',
-  // Menu chọn model chỉ hiện 1 mục cho cả dòng; độ phân giải chọn ở ô 480p/720p/1080p
-  familyName: 'Seedance 2.5',
-  familyTag: 'ByteDance',
-  familyDescription: '480p / 720p / 1080p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh',
-  durationRange: [4, 30],
-  durations: [4, 5, 10, 15, 20, 25, 30],
-  defaultDuration: 5,
-  maxReferenceImages: 9,
-}
+// ============================================================================
+// Seedance Creation Bot API (https://api.seedancecreationbot.online/docs)
+// Video: model "Seedance 2.5" | "Seedance 2.0", duration 5/8/10/12/15/30 giây (2.0 tối đa 15),
+//        resolution 480/720/1080, ratio 16:9 / 9:16 / 1:1, tối đa 30 ảnh tham chiếu.
+// Ảnh:   8 model (xem bảng giá trong /guide), ratio 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, tối đa 6 ảnh tham chiếu.
+// Giá thật theo từng tài khoản: GET /v1/prices (cần API key).
+// ============================================================================
 
 export const VIDEO_MODELS = [
   {
-    ...SEEDANCE_25,
-    id: 'seedance-2.5-720p',
-    name: 'Seedance 2.5 · 720p',
-    fixedResolution: '720p',
-    tag: 'Chất lượng cao',
-    description: '720p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 20.342đ',
-    pricePerSecond: 4068,
-  },
-  {
-    ...SEEDANCE_25,
-    id: 'seedance-2.5-1080p',
-    name: 'Seedance 2.5 · 1080p',
-    fixedResolution: '1080p',
-    tag: 'Full HD',
-    description: '1080p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 49.889đ',
-    pricePerSecond: 9978,
-  },
-  {
-    ...SEEDANCE_25,
-    id: 'seedance-2.5-480p',
-    name: 'Seedance 2.5 · 480p',
-    fixedResolution: '480p',
-    tag: 'Tiết kiệm',
-    description: '480p · 4–30s · ảnh đầu/cuối, tạo âm thanh, ref ảnh · 5s ≈ 9.033đ',
-    pricePerSecond: 1807,
+    id: 'Seedance 2.5',
+    name: 'Seedance 2.5',
+    tag: 'ByteDance',
+    description: '480p / 720p / 1080p · 5–30 giây · có tiếng · tối đa 30 ảnh tham chiếu',
+    durations: [5, 8, 10, 12, 15, 30],
+    defaultDuration: 5,
+    supportedRatios: ['16:9', '9:16', '1:1'],
+    defaultRatio: '16:9',
+    supportedResolutions: ['480p', '720p', '1080p'],
+    defaultResolution: '720p',
+    supportsImageToVideo: true,
+    maxReferenceImages: 30,
+    // Tài liệu khuyên hỏi trạng thái mỗi 30 giây; dùng 15 giây để % cập nhật nhanh hơn (giới hạn 120 yêu cầu/phút)
+    pollIntervalMs: 15000,
+    maxWaitMs: 2 * 60 * 60 * 1000,
   },
 ]
 
 export const IMAGE_MODELS = [
-  {
-    id: 'gemini-3-pro-image',
-    name: 'gemini-3-pro-image (Nano Banana Pro)',
-    tag: 'Nano Banana Pro',
-    description: 'Gemini 3 Pro Image — Siêu phẩm tạo ảnh chân thực, chi tiết cao, hỗ trợ 2K và 4K',
-    supportsReference: true,
-    supportedResolutions: ['2k', '4k', '1k'],
-    defaultResolution: '2k',
-  },
-  {
-    id: 'gpt-image-2',
-    name: 'gpt-image-2',
-    tag: 'Đa năng & Ghép ảnh',
-    description: 'Tạo ảnh siêu nét 1024x1024, hỗ trợ sửa ảnh và GHÉP 2+ ẢNH THAM CHIẾU',
-    supportsReference: true,
-    supportedResolutions: ['1k'],
-    defaultResolution: '1k',
-  },
-  {
-    id: 'gpt-image-2.5-flare',
-    name: 'gpt-image-2.5-flare',
-    tag: 'Flare Nghệ thuật',
-    description: 'Dòng Flare ánh sáng rực rỡ, nghệ thuật',
-    supportsReference: true,
-    supportedResolutions: ['1k'],
-    defaultResolution: '1k',
-  },
-  {
-    id: 'gpt-image-2.5-sunburst',
-    name: 'gpt-image-2.5-sunburst',
-    tag: 'Sunburst Điện ảnh',
-    description: 'Dòng Sunburst điện ảnh chân thực, chi tiết cao',
-    supportsReference: true,
-    supportedResolutions: ['1k'],
-    defaultResolution: '1k',
-  },
-  {
-    id: 'gemini-3.1-flash-image-preview',
-    name: 'gemini-3.1-flash-image-preview (nanobanana 2)',
-    tag: 'Nanobanana 2 Siêu tốc',
-    description: 'Nanobanana 2 tốc độ cực nhanh, hỗ trợ tham chiếu',
-    supportsReference: true,
-    supportedResolutions: ['1k'],
-    defaultResolution: '1k',
-  },
-]
+  { id: 'GPT Image 2.5', name: 'GPT Image 2.5', tag: '700đ/ảnh', description: 'Model mặc định, đa năng, hỗ trợ ảnh tham chiếu' },
+  { id: 'Seedream 5.0', name: 'Seedream 5.0', tag: '500đ/ảnh', description: 'ByteDance Seedream 5.0' },
+  { id: 'Seedream 5.0 Pro', name: 'Seedream 5.0 Pro', tag: '900đ/ảnh', description: 'ByteDance Seedream 5.0 Pro, chi tiết cao' },
+  { id: 'Seedream 4.0S', name: 'Seedream 4.0S', tag: '400đ/ảnh', description: 'Rẻ nhất' },
+  { id: 'Nano Banana Pro', name: 'Nano Banana Pro', tag: '1.000đ/ảnh', description: 'Google Nano Banana Pro' },
+  { id: 'Nano Banana 2.1', name: 'Nano Banana 2.1', tag: '700đ/ảnh', description: 'Google Nano Banana 2.1' },
+  { id: 'Nano Banana 2', name: 'Nano Banana 2', tag: '800đ/ảnh', description: 'Google Nano Banana 2' },
+  { id: 'GPT Image 2', name: 'GPT Image 2', tag: '1.100đ/ảnh', description: 'OpenAI GPT Image 2' },
+].map(m => ({ ...m, supportsReference: true, maxReferenceImages: 6, supportedResolutions: [] }))
 
 export const MODELS = VIDEO_MODELS
 
@@ -176,44 +110,12 @@ export const ASPECT_RATIOS = [
 ]
 
 export const IMAGE_ASPECT_RATIOS = [
-  {
-    id: '16:9',
-    label: '16:9',
-    desc: 'Ngang chuẩn 16:9 YouTube/PC',
-    shape: 'landscape-wide',
-    sizes: {
-      '1k': '1792x1024',
-      '2k': '2560x1440',
-      '4k': '3840x2160',
-    },
-    fallbackSize: '1792x1024',
-  },
-  {
-    id: '9:16',
-    label: '9:16',
-    desc: 'Dọc TikTok, Reels, Shorts',
-    shape: 'tall',
-    sizes: {
-      '1k': '1024x1792',
-      '2k': '1440x2560',
-      '4k': '2160x3840',
-    },
-    fallbackSize: '1024x1792',
-  },
-  {
-    id: '1:1',
-    label: '1:1',
-    desc: 'Vuông Instagram 1:1',
-    shape: 'square',
-    sizes: {
-      '1k': '1024x1024',
-      '2k': '2048x2048',
-      '4k': '4096x4096',
-    },
-    fallbackSize: '1024x1024',
-  },
+  { id: '16:9', label: '16:9', desc: 'Ngang chuẩn 16:9 YouTube/PC', shape: 'landscape-wide' },
+  { id: '9:16', label: '9:16', desc: 'Dọc TikTok, Reels, Shorts', shape: 'tall' },
+  { id: '1:1', label: '1:1', desc: 'Vuông Instagram 1:1', shape: 'square' },
+  { id: '4:3', label: '4:3', desc: 'Ngang 4:3', shape: 'landscape-compact' },
+  { id: '3:4', label: '3:4', desc: 'Dọc 3:4', shape: 'portrait-compact' },
 ]
-
 
 export const VIDEO_RESOLUTIONS = [
   { id: '480p', label: '480p', desc: 'Tiết kiệm chi phí' },
@@ -228,18 +130,6 @@ export const IMAGE_RESOLUTIONS = [
 ]
 
 export const RESOLUTIONS = VIDEO_RESOLUTIONS
-
-/** Ước tính giá (VNĐ) theo số giây cho model có pricePerSecond. */
-export function estimateVideoPrice(modelObj, seconds) {
-  if (!modelObj?.pricePerSecond) return null
-  return Math.round(modelObj.pricePerSecond * Number(seconds || 0))
-}
-
-/** Tìm model cùng dòng (family) với độ phân giải khác, vd. seedance-2.5-720p → seedance-2.5-1080p */
-export function findSiblingModel(modelObj, resolution) {
-  if (!modelObj?.family) return null
-  return VIDEO_MODELS.find(m => m.family === modelObj.family && m.fixedResolution === resolution) || null
-}
 
 export const SHOWCASE_POSTERS = [
   {
@@ -276,44 +166,44 @@ export const INSPIRATION_PROMPTS = [
   {
     label: 'Tokyo Neon Drone',
     prompt: 'Cinematic drone shot flying through futuristic neon Tokyo at night, wet asphalt reflections, hyperrealistic 4k',
-    model: 'seedance-2.5-720p',
+    model: 'Seedance 2.5',
     seconds: 10,
     ratio: '16:9'
   },
   {
     label: 'Golden Retriever',
     prompt: 'A cute Golden Retriever puppy running happily in autumn park with falling golden leaves, 4k ultra detailed',
-    model: 'seedance-2.5-720p',
+    model: 'Seedance 2.5',
     seconds: 5,
     ratio: '16:9'
   },
   {
     label: 'Cyberpunk Girl',
     prompt: 'Portrait of a cyberpunk girl with glowing holographic cyberware looking gently at falling cherry blossom petals in rainy street',
-    model: 'seedance-2.5-720p',
+    model: 'Seedance 2.5',
     seconds: 10,
     ratio: '9:16'
   },
   {
     label: 'Eagle Mountains',
     prompt: 'A majestic eagle soaring gracefully over dramatic snow-capped alpine mountains in golden hour sunlight',
-    model: 'seedance-2.5-720p',
+    model: 'Seedance 2.5',
     seconds: 15,
     ratio: '16:9'
   },
   {
     label: 'Futuristic Supercar',
     prompt: 'A sleek futuristic concept supercar speeding on coastal cliff highway at twilight, cinematic camera tracking',
-    model: 'seedance-2.5-720p',
+    model: 'Seedance 2.5',
     seconds: 10,
     ratio: '16:9'
   },
   {
-    label: 'Ultrawide Sci-Fi Movie',
-    prompt: 'Epic anamorphic 21:9 ultrawide shot of a massive starship emerging from a hyperspace nebula above a crimson alien planet, cinematic lighting',
-    model: 'seedance-2.5-720p',
+    label: 'Sci-Fi Movie',
+    prompt: 'Epic anamorphic widescreen shot of a massive starship emerging from a hyperspace nebula above a crimson alien planet, cinematic lighting',
+    model: 'Seedance 2.5',
     seconds: 10,
-    ratio: '21:9'
+    ratio: '16:9'
   }
 ]
 
@@ -321,43 +211,43 @@ export const IMAGE_INSPIRATION_PROMPTS = [
   {
     label: 'Nano Banana Pro Cyber-Dragon',
     prompt: 'Ultra detailed 4K cinematic photo of a mechanical neon cyber dragon coiled around Tokyo tower at midnight, photorealistic, Unreal Engine 5 render',
-    model: 'gemini-3-pro-image',
+    model: 'Nano Banana Pro',
     ratio: '16:9',
   },
   {
     label: 'Nano Banana Ultrawide',
     prompt: 'Breathtaking 16:9 cinematic panorama of a neon cyberpunk metropolis in torrential rain, reflections on wet asphalt, volumetric fog, 4k cinematic',
-    model: 'gemini-3-pro-image',
+    model: 'Nano Banana Pro',
     ratio: '16:9',
   },
   {
     label: 'Pixar Baby Dragon',
     prompt: 'Một chú rồng nhỏ dễ thương phong cách 3D Pixar, nền rừng tuyết lung linh, 8k',
-    model: 'gpt-image-2',
+    model: 'GPT Image 2.5',
     ratio: '1:1',
   },
   {
     label: 'Cyberpunk Neon City',
     prompt: 'Cyberpunk city night view, neon lights, ultra realistic 8k, cinematic lighting',
-    model: 'gpt-image-2',
+    model: 'GPT Image 2.5',
     ratio: '16:9',
   },
   {
-    label: 'Flare Golden Sunset',
+    label: 'Golden Sunset',
     prompt: 'Golden hour dramatic sunburst over ocean waves, vibrant glowing lens flare, warm cinematic tones, 8k',
-    model: 'gpt-image-2.5-flare',
+    model: 'Seedream 5.0',
     ratio: '16:9',
   },
   {
-    label: 'Sunburst Portrait',
+    label: 'Warrior Portrait',
     prompt: 'Cinematic close-up portrait of a warrior woman with intricate face paint in desert storm, intense dramatic lighting, 8k',
-    model: 'gpt-image-2.5-sunburst',
+    model: 'Seedream 5.0 Pro',
     ratio: '9:16',
   },
   {
-    label: 'Nanobanana Art',
+    label: 'Watercolor Pagoda',
     prompt: 'Watercolor oil painting of ancient pagoda on misty mountain peak, cherry blossoms, peaceful aesthetic',
-    model: 'gemini-3.1-flash-image-preview',
+    model: 'Nano Banana 2.1',
     ratio: '1:1',
   },
 ]

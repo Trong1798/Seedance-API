@@ -1,84 +1,98 @@
-import { getApiKey, getBaseUrl } from './storage.js'
+import { getApiKey } from './storage.js'
 
-const PORTAL_URL = 'https://tuansuapi.store/portal'
+// ============================================================================
+// Seedance Creation Bot API — https://api.seedancecreationbot.online (tài liệu: /docs, /guide)
+// Máy chủ không hỗ trợ CORS nên mọi request đi qua lớp trung gian của web: /api/sd/<đường dẫn>
+// (api/sd.js trên Vercel, middleware trong vite.config.js khi chạy trên máy).
+// ============================================================================
+export const SEEDANCE_UPSTREAM = 'https://api.seedancecreationbot.online'
+export const API_BASE = '/api/sd/v1'
+const WALLET_HINT = 'Nạp ví trong bot Telegram của Seedance (số dư tối thiểu 20.000đ).'
+
+const sleep = (ms, signal) => new Promise((resolve, reject) => {
+  const t = setTimeout(resolve, ms)
+  signal?.addEventListener('abort', () => { clearTimeout(t); reject(new DOMException('Aborted', 'AbortError')) }, { once: true })
+})
+
+function authHeaders(apiKey, json = false) {
+  const h = { Authorization: `Bearer ${String(apiKey || '').trim()}` }
+  if (json) h['Content-Type'] = 'application/json'
+  return h
+}
+
+// ---------------------------------------------------------------------------
+// Lỗi
+// ---------------------------------------------------------------------------
 
 /**
- * Lấy chuỗi thông báo từ trường `error` của Gateway.
- * Định dạng chuẩn: { error: { type, code, message, request_id } } — nhưng có thể là string.
+ * Đọc thông tin lỗi từ phản hồi của máy chủ. Các dạng gặp được:
+ *  - {"error": "invalid_api_key", "message": "..."}         (lỗi do API trả về)
+ *  - {"error": {"message": "...", "code": "..."}}           (dạng OpenAI)
+ *  - {"detail": "..."} hoặc {"detail": [{loc, msg}, ...]}   (lỗi kiểm tra dữ liệu, mã 422)
  */
-export function extractServerError(errField) {
-  if (!errField) return { message: '', code: '', requestId: '' }
-  if (typeof errField === 'string') return { message: errField, code: '', requestId: '' }
-  return {
-    message: errField.message || '',
-    code: errField.code || errField.type || '',
-    requestId: errField.request_id || '',
+export function extractServerError(json) {
+  if (!json || typeof json !== 'object') return { message: '', code: '', extra: '' }
+  let message = ''
+  let code = ''
+  if (typeof json.error === 'string') {
+    code = json.error
+    message = json.message || ''
+  } else if (json.error && typeof json.error === 'object') {
+    code = json.error.code || json.error.type || ''
+    message = json.error.message || ''
+  } else if (json.message) {
+    message = json.message
   }
-}
-
-function isBalanceError(text) {
-  return /insufficient|balance|credit|quota|số dư|so du/i.test(text || '')
+  if (!message && json.detail) {
+    message = Array.isArray(json.detail)
+      ? json.detail.map(d => `${(d.loc || []).filter(x => x !== 'body').join('.')}: ${d.msg}`).join('; ')
+      : String(json.detail)
+  }
+  // 402 kèm số dư hiện có và số tiền cần
+  const extra = json.balance != null && json.required != null
+    ? `Số dư: ${Number(json.balance).toLocaleString('vi-VN')}đ, cần: ${Number(json.required).toLocaleString('vi-VN')}đ.`
+    : ''
+  return { message, code, extra }
 }
 
 /**
- * Chuyển mã HTTP + thông báo của Gateway thành lỗi tiếng Việt dễ hiểu,
- * luôn giữ lại mã HTTP, mã lỗi, request_id và thông điệp gốc để tiện báo hỗ trợ.
+ * Diễn giải lỗi theo bảng mã lỗi trong tài liệu (mục 5), giữ lại thông điệp gốc của máy chủ.
  * kind: 'video' | 'image' | 'status' | 'balance'
  */
-export function describeApiError(status, { message = '', code = '', requestId = '' } = {}, kind = 'video') {
+export function describeApiError(status, { message = '', code = '', extra = '' } = {}, kind = 'video') {
   const what = kind === 'image' ? 'tạo ảnh' : 'tạo video'
   let friendly
-
-  if (status === 402 || isBalanceError(message) || isBalanceError(code)) {
-    friendly = `Số dư không đủ để ${what}. Vui lòng nạp thêm tại ${PORTAL_URL}`
-  } else if (status === 401) {
-    friendly = 'API Key sai, hết hạn hoặc không hoạt động. Vui lòng kiểm tra lại trong phần Cài đặt.'
-  } else if (status === 403) {
-    friendly = 'API Key đã bị khóa hoặc chưa được cấp quyền dùng model này.'
-  } else if (status === 404) {
-    friendly = /model/i.test(code + message)
-      ? 'Model không tồn tại hoặc chưa được cấp cho API Key này (kiểm tra danh sách model qua GET /v1/models).'
-      : kind === 'status'
-      ? 'Không tìm thấy task video (ID không tồn tại hoặc đã bị hủy).'
-      : 'Không tìm thấy endpoint/model trên Gateway. Kiểm tra lại Base URL và tên model.'
+  if (status === 401) {
+    friendly = 'API Key sai hoặc đã bị thu hồi. Lấy khóa mới bằng lệnh /api new trong bot rồi dán vào phần Cài đặt.'
+  } else if (status === 402) {
+    friendly = `Số dư không đủ để ${what}. ${WALLET_HINT}`
   } else if (status === 400 || status === 422) {
-    friendly = 'Yêu cầu không hợp lệ (sai tham số, sai tên model hoặc ảnh tham chiếu không đọc được).'
+    friendly = 'Dữ liệu gửi lên không hợp lệ (model, thời lượng, độ phân giải, tỉ lệ hoặc ảnh tham chiếu).'
+  } else if (status === 404) {
+    friendly = kind === 'status' ? 'Không tìm thấy đơn này (sai ID hoặc đã hết hạn lưu).' : 'Không tìm thấy (sai đường dẫn hoặc đơn không tồn tại).'
   } else if (status === 409) {
-    friendly = 'API Key này không dùng số dư tiền (409).'
-  } else if (status === 413) {
-    friendly = 'Dữ liệu gửi lên quá lớn. Mỗi ảnh tham chiếu nên dưới 10MB.'
+    friendly = 'Video chưa sẵn sàng hoặc đơn không hủy được.'
   } else if (status === 429) {
-    friendly = 'Bạn gửi quá nhiều yêu cầu hoặc hệ thống đang quá tải. Vui lòng thử lại sau giây lát.'
-  } else if (status === 499 || status === 524) {
-    friendly = 'Kết nối bị ngắt do quá thời gian chờ (Cloudflare timeout). Vui lòng thử lại.'
-  } else if (status === 503) {
-    friendly = 'Dịch vụ tạm thời không khả dụng. Vui lòng thử lại sau.'
+    friendly = 'Gửi quá nhanh (tối đa 120 yêu cầu/phút) hoặc đang có quá nhiều đơn chạy cùng lúc (tối đa 300). Vui lòng thử lại sau.'
+  } else if (status === 499 || status === 524 || status === 504) {
+    friendly = 'Kết nối bị ngắt do quá thời gian chờ. Vui lòng thử lại.'
   } else if (status >= 500) {
-    friendly = 'Máy chủ Gateway gặp lỗi. Job thất bại do lỗi hệ thống sẽ không bị trừ tiền.'
+    friendly = 'Máy chủ Seedance đang gặp lỗi tạm thời. Đơn lỗi được tự hoàn tiền.'
   } else {
     friendly = message || `Lỗi không xác định khi ${what}.`
   }
-
-  const meta = [status ? `HTTP ${status}` : '', code, requestId ? `request_id: ${requestId}` : '']
-    .filter(Boolean)
-    .join(' · ')
+  const meta = [status ? `HTTP ${status}` : '', code].filter(Boolean).join(' · ')
   const detail = message && message !== friendly ? `\nChi tiết từ máy chủ: ${message}` : ''
-  return `${friendly}${meta ? ` (${meta})` : ''}${detail}`
+  return `${friendly}${meta ? ` (${meta})` : ''}${detail}${extra ? `\n${extra}` : ''}`
 }
 
-/**
- * Đọc body lỗi của Response (chỉ đọc 1 lần) và trả về Error đã được diễn giải.
- */
+/** Đọc body lỗi của Response (chỉ đọc 1 lần) và trả về Error đã được diễn giải. */
 export async function readApiError(res, kind = 'video') {
   let text = ''
+  try { text = await res.text() } catch {}
+  let info = { message: '', code: '', extra: '' }
   try {
-    text = await res.text()
-  } catch {}
-  let info = { message: '', code: '', requestId: '' }
-  try {
-    const json = JSON.parse(text)
-    info = extractServerError(json.error)
-    if (!info.message && json.message) info.message = json.message
+    info = extractServerError(JSON.parse(text))
   } catch {
     info.message = text.trim().slice(0, 300)
   }
@@ -88,697 +102,443 @@ export async function readApiError(res, kind = 'video') {
   return err
 }
 
+// ---------------------------------------------------------------------------
+// Đường dẫn media
+// ---------------------------------------------------------------------------
+
 /**
- * Resolves raw URLs, relative paths or localhost rewrites to absolute Gateway URLs.
+ * Đưa mọi đường dẫn file của Seedance về lớp trung gian của web:
+ *  https://api.seedancecreationbot.online/v1/... → /api/sd/v1/...
+ *  /v1/...                                         → /api/sd/v1/...
  */
-export function resolveVideoUrl(rawUrl, baseUrl = 'https://tuansuapi.store/v1') {
+export function resolveVideoUrl(rawUrl) {
   if (!rawUrl) return null
-
-  // If accidentally formatted as localhost URL pointing to /v1/
-  if (rawUrl.includes('localhost:') && rawUrl.includes('/v1/')) {
-    const pathPart = rawUrl.substring(rawUrl.indexOf('/v1/'))
-    const cleanBase = (baseUrl || 'https://tuansuapi.store/v1').replace(/\/+$/, '')
-    let origin = 'https://tuansuapi.store'
-    try {
-      origin = new URL(cleanBase).origin
-    } catch {}
-    return `${origin}${pathPart}`
-  }
-
-  if (
-    rawUrl.startsWith('blob:') ||
-    rawUrl.startsWith('data:') ||
-    rawUrl.startsWith('http://') ||
-    rawUrl.startsWith('https://')
-  ) {
-    return rawUrl
-  }
-
-  try {
-    const cleanBase = (baseUrl || 'https://tuansuapi.store/v1').replace(/\/+$/, '')
-    const baseObj = new URL(cleanBase)
-    return new URL(rawUrl, baseObj.origin).href
-  } catch {
-    const cleanBase = (baseUrl || 'https://tuansuapi.store/v1').replace(/\/+$/, '')
-    const cleanRaw = rawUrl.replace(/^\/+/, '')
-    return `${cleanBase}/${cleanRaw}`
-  }
+  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl
+  if (rawUrl.startsWith(SEEDANCE_UPSTREAM)) return `/api/sd${rawUrl.slice(SEEDANCE_UPSTREAM.length)}`
+  if (rawUrl.startsWith('/v1/')) return `/api/sd${rawUrl}`
+  return rawUrl
 }
 
-/**
- * Detects whether an item or URL represents an image
- */
+const isProxyUrl = (url) => typeof url === 'string' && url.startsWith('/api/sd/')
+
+/** Thêm ?key= cho link đi qua lớp trung gian (thẻ <video>/<img> không gửi được header). */
+function withKey(url, apiKey) {
+  const key = (apiKey || getApiKey() || '').trim()
+  if (!isProxyUrl(url) || !key) return url
+  const [base, qs = ''] = url.split('?')
+  const params = new URLSearchParams(qs)
+  params.set('key', key)
+  return `${base}?${params.toString()}`
+}
+
+/** Nhận biết một mục là ảnh hay video */
 export function isMediaImage(item) {
   if (!item) return false
   if (typeof item === 'string') {
     return (
       item.startsWith('data:image') ||
       /\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(item) ||
-      item.includes('/images/') ||
-      item.includes('img.apimatou.cc')
+      item.includes('/v1/images/')
     )
   }
   if (item.mediaType === 'image') return true
   if (item.mediaType === 'video') return false
   const modelStr = String(item.model || '').toLowerCase()
-  if (
-    modelStr.includes('image') ||
-    modelStr.includes('banana') ||
-    modelStr.includes('flare') ||
-    modelStr.includes('sunburst')
-  ) {
-    return true
-  }
-  const url = String(item.url || item.directUrl || '')
-  return isMediaImage(url)
+  if (/image|banana|seedream|flare|sunburst/.test(modelStr)) return true
+  return isMediaImage(String(item.url || item.directUrl || ''))
 }
 
-/**
- * Generates direct image URL without query tampering
- * Strips any unintended query parameters (like key or variant) that cause 400/403 on image CDNs
- */
-export function getDirectImageUrl(rawUrl, baseUrl) {
+/** Link ảnh dùng được trực tiếp trong <img> */
+export function getDirectImageUrl(rawUrl, apiKey) {
   if (!rawUrl) return null
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
-    return rawUrl
-  }
-  const resolved = resolveVideoUrl(rawUrl, baseUrl || getBaseUrl())
-  try {
-    const u = new URL(resolved)
-    u.searchParams.delete('key')
-    u.searchParams.delete('variant')
-    return u.href
-  } catch {
-    return resolved
-      .replace(/[?&]key=[^&]+/g, '')
-      .replace(/[?&]variant=[^&]+/g, '')
-      .replace(/\?$/, '')
-  }
+  const resolved = resolveVideoUrl(rawUrl)
+  return isProxyUrl(resolved) ? withKey(resolved, apiKey) : resolved
 }
 
-/**
- * Generates direct streaming URL with authentication query parameter (&key=...)
- * As recommended by provider documentation for browser playback and downloads.
- */
-export function getDirectVideoUrl(rawUrl, apiKey, baseUrl) {
+/** Link video dùng được trực tiếp trong <video> */
+export function getDirectVideoUrl(rawUrl, apiKey) {
   if (!rawUrl) return null
-  if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) {
-    return rawUrl
-  }
-
-  const effectiveKey = apiKey || getApiKey()
-  const resolved = resolveVideoUrl(rawUrl, baseUrl || getBaseUrl())
-
-  try {
-    const u = new URL(resolved)
-    if (u.pathname.endsWith('/content') && !u.searchParams.has('variant')) {
-      u.searchParams.set('variant', 'video')
-    }
-    if (effectiveKey && !u.searchParams.has('key') && (u.pathname.includes('/content') || u.hostname.includes('tuansuapi.store'))) {
-      u.searchParams.set('key', effectiveKey.trim())
-    }
-    return u.href
-  } catch {
-    const sep = resolved.includes('?') ? '&' : '?'
-    const keyParam = effectiveKey ? `key=${encodeURIComponent(effectiveKey.trim())}` : ''
-    const variantParam = !resolved.includes('variant=') ? 'variant=video' : ''
-    const params = [variantParam, keyParam].filter(Boolean).join('&')
-    return params ? `${resolved}${sep}${params}` : resolved
-  }
+  const resolved = resolveVideoUrl(rawUrl)
+  return isProxyUrl(resolved) ? withKey(resolved, apiKey) : resolved
 }
 
-/**
- * Fetch video/image content as Blob URL for local memory caching
- */
-export async function fetchVideoBlob(url, apiKey, baseUrl) {
+/** Tải file về bộ nhớ trình duyệt (blob:) để phát/tải xuống ổn định */
+export async function fetchVideoBlob(url, apiKey) {
   if (!url) throw new Error('URL không tồn tại.')
-  if (url.startsWith('blob:') || url.startsWith('data:')) {
-    return url
-  }
-
-  const effectiveKey = apiKey || getApiKey()
-  const rawBase = baseUrl || getBaseUrl() || 'https://tuansuapi.store/v1'
-  const isImageFile = /\.(png|jpe?g|webp|gif)($|\?)/i.test(url) || url.includes('/images/') || url.includes('img.apimatou.cc')
-
-  let cleanUrl = isImageFile ? getDirectImageUrl(url, rawBase) : getDirectVideoUrl(url, effectiveKey, rawBase)
-  const headers = {}
-
-  let isGatewayDomain = false
-  try {
-    const targetHost = new URL(cleanUrl).hostname
-    const baseHost = new URL(rawBase).hostname
-    isGatewayDomain = targetHost === baseHost || targetHost.includes('tuansuapi.store')
-  } catch {}
-
-  // Only pass Authorization header to Gateway domain, not external image CDNs (which would trigger CORS errors)
-  if (effectiveKey && isGatewayDomain) {
-    headers['Authorization'] = `Bearer ${effectiveKey.trim()}`
-  }
-
-  const res = await fetch(cleanUrl, { credentials: 'omit', headers })
+  if (url.startsWith('blob:') || url.startsWith('data:')) return url
+  const resolved = resolveVideoUrl(url)
+  const key = (apiKey || getApiKey() || '').trim()
+  const headers = isProxyUrl(resolved) && key ? authHeaders(key) : {}
+  const res = await fetch(resolved, { credentials: 'omit', headers })
   if (!res.ok) {
-    let errMsg = `Mã HTTP: ${res.status}`
-    try {
-      const errJson = await res.json()
-      if (errJson?.error?.message) {
-        errMsg = errJson.error.message
-      }
-    } catch {
-      // not JSON
-    }
-    throw new Error(`Không thể nạp file từ máy chủ (${errMsg})`)
+    const err = await readApiError(res, 'status')
+    throw new Error(`Không thể tải file từ máy chủ: ${err.message}`)
   }
-
-  const blob = await res.blob()
-  return URL.createObjectURL(blob)
+  return URL.createObjectURL(await res.blob())
 }
 
+// ---------------------------------------------------------------------------
+// Theo dõi đơn (video & ảnh dùng chung)
+// ---------------------------------------------------------------------------
+
+const DONE = ['completed']
+const FAILED = ['failed', 'cancelled', 'canceled', 'error']
+
 /**
- * Poll task status if server responds asynchronously (status: queued / processing)
- * Following provider workflow: GET /v1/videos/{video_id} every 5s until completed
+ * Hỏi trạng thái đơn đến khi xong: GET /v1/videos/{id} hoặc /v1/images/{id}.
+ * Lỗi tạm thời (mạng, 5xx, 429) được thử lại; lỗi 5xx liên tục quá maxServerErrorMs thì dừng và báo rõ.
  */
-export async function pollVideoStatus(videoId, apiKey, baseUrl, { signal, onHeartbeat, intervalMs = 5000 } = {}) {
-  const cleanBase = (baseUrl || getBaseUrl() || 'https://tuansuapi.store/v1').replace(/\/+$/, '')
-  const endpoint = `${cleanBase}/videos/${videoId}`
+export async function pollJob(kind, id, apiKey, { signal, onHeartbeat, intervalMs = 15000, maxServerErrorMs = 5 * 60 * 1000 } = {}) {
+  const endpoint = `${API_BASE}/${kind === 'image' ? 'images' : 'videos'}/${encodeURIComponent(id)}`
+  const label = kind === 'image' ? 'ảnh' : 'video'
+  let firstServerErrorAt = null
 
   while (true) {
-    if (signal?.aborted) {
-      throw new Error('Quá trình tạo video đã bị hủy.')
-    }
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError')
 
     let res
     try {
-      res = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey.trim()}`,
-        },
-        signal,
-      })
+      res = await fetch(endpoint, { headers: authHeaders(apiKey), signal })
     } catch (netErr) {
       if (signal?.aborted) throw netErr
-      // Network hiccup, wait and retry
-      await new Promise(r => setTimeout(r, 4000))
+      onHeartbeat?.({ timestamp: Date.now(), message: 'Mất kết nối tạm thời, đang thử lại...' })
+      await sleep(5000, signal)
       continue
     }
 
     if (!res.ok) {
       if (res.status >= 500 || res.status === 429) {
-        await new Promise(r => setTimeout(r, 5000))
+        firstServerErrorAt ??= Date.now()
+        if (Date.now() - firstServerErrorAt > maxServerErrorMs) {
+          const err = await readApiError(res, 'status')
+          throw new Error(
+            `Máy chủ không trả được trạng thái đơn ${id} trong hơn ${Math.round(maxServerErrorMs / 60000)} phút.\n${err.message}\n` +
+            'Đơn có thể đã lỗi phía máy chủ (đơn lỗi được tự hoàn tiền). Gửi ID này cho admin trong bot nếu bị trừ tiền.'
+          )
+        }
+        onHeartbeat?.({ timestamp: Date.now(), message: `Máy chủ đang lỗi tạm thời (HTTP ${res.status}), đang thử lại...` })
+        await sleep(res.status === 429 ? 30000 : 10000, signal)
         continue
       }
       const err = await readApiError(res, 'status')
-      err.message = `Lỗi kiểm tra trạng thái video (ID: ${videoId}): ${err.message}`
+      err.message = `Lỗi kiểm tra trạng thái ${label} (ID: ${id}): ${err.message}`
       throw err
     }
+    firstServerErrorAt = null
 
     const data = await res.json()
-    if (onHeartbeat) {
-      onHeartbeat({
-        timestamp: Date.now(),
-        status: data.status,
-        progress: data.progress,
-        message: ['processing', 'in_progress'].includes(data.status) 
-          ? `Đang render video... ${data.progress ? data.progress + '%' : ''}`
-          : `Trạng thái: ${data.status || 'Đang xử lý'}`,
-      })
-    }
+    const progress = Number.isFinite(Number(data.progress)) ? Number(data.progress) : null
+    onHeartbeat?.({
+      timestamp: Date.now(),
+      status: data.status,
+      progress,
+      message: data.status === 'queued'
+        ? `Đơn đang xếp hàng (ID: ${id})...`
+        : `Đang tạo ${label}... ${progress != null ? `${progress}%` : ''}`,
+    })
 
-    if (data.status === 'completed' || data.status === 'succeeded' || data.url || data.video_url) {
-      return data
-    }
-
-    if (['failed', 'error', 'cancelled', 'canceled'].includes(data.status)) {
-      const info = extractServerError(data.error)
-      const reason = info.message || data.message || 'Quá trình render video thất bại trên máy chủ.'
-      const meta = [info.code, info.requestId ? `request_id: ${info.requestId}` : ''].filter(Boolean).join(' · ')
+    if (DONE.includes(data.status)) return data
+    if (FAILED.includes(data.status)) {
+      const reason = typeof data.error === 'string' ? data.error : (data.error?.message || data.message || '')
+      const refundNote = data.refunded ? 'Đã tự hoàn tiền vào ví.' : 'Đơn lỗi / bị từ chối được tự hoàn tiền vào ví.'
       throw new Error(
-        `Render video thất bại (ID: ${videoId}${meta ? ` · ${meta}` : ''}): ${reason}\n` +
-        'Job thất bại do lỗi hệ thống sẽ không bị trừ tiền.'
+        `${label[0].toUpperCase()}${label.slice(1)} ${data.status === 'failed' ? 'thất bại' : 'đã bị hủy'} (ID: ${id})` +
+        `${reason ? `: ${reason}` : ''}\n${refundNote}`
       )
     }
-
-    // Seedance khuyến nghị poll mỗi 20 giây; model khác 5 giây
-    await new Promise(r => setTimeout(r, intervalMs))
+    await sleep(intervalMs, signal)
   }
 }
 
-function summarizeVideoPayload(payload, refMode) {
-  const refs = payload.input_reference
-  const refCount = Array.isArray(refs) ? refs.length : refs ? 1 : 0
-  const omniCount = payload.reference_image_urls?.length || 0
-  return [
-    `model=${payload.model}`,
-    `seconds=${payload.seconds}`,
-    payload.size ? `size=${payload.size}` : '',
-    payload.aspect_ratio ? `aspect_ratio=${payload.aspect_ratio}` : '',
-    payload.resolution ? `resolution=${payload.resolution}` : '',
-    refCount ? `input_reference=${refCount} ảnh (${refMode})` : '',
-    omniCount ? `reference_image_urls=${omniCount} ảnh (${refMode})` : '',
-    payload.omni_reference_task_type ? `omni_reference_task_type=${payload.omni_reference_task_type}` : '',
-    !refCount && !omniCount ? 'không có ảnh' : '',
-    `prompt=${payload.prompt.length} ký tự`,
-  ].filter(Boolean).join(' · ')
+// Giữ tên cũ cho các chỗ đang dùng
+export const pollVideoStatus = (videoId, apiKey, _baseUrl, opts) => pollJob('video', videoId, apiKey, opts)
+
+function newClientRef(prefix) {
+  const rand = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/-/g, '')
+  return `${prefix}-${rand}`.slice(0, 64)
 }
 
-/**
- * Đổi thẻ @Image1, @Image2... trong prompt thành <Image 1>, <Image 2>... —
- * cú pháp gọi ảnh tham chiếu mà TuanSu hướng dẫn cho Seedance.
- */
-export function toSeedanceImageTags(text) {
-  return text.replace(/@Image(\d+)/gi, (_, n) => `<Image ${n}>`)
+function selectedReferenceUrls(referenceImages, referenceImage) {
+  return Array.isArray(referenceImages) && referenceImages.length > 0
+    ? referenceImages.filter(i => i.selected).map(img => (typeof img === 'string' ? img : img.url)?.trim()).filter(Boolean)
+    : (typeof referenceImage === 'string' && referenceImage.trim() ? [referenceImage.trim()] : [])
 }
 
+function summarizePayload(payload) {
+  return Object.entries(payload)
+    .map(([k, v]) => {
+      if (k === 'prompt') return `prompt=${String(v).length} ký tự`
+      if (Array.isArray(v)) return `${k}=${v.length} mục`
+      return `${k}=${v}`
+    })
+    .join(' · ')
+}
+
+// ---------------------------------------------------------------------------
+// Tạo video — POST /v1/videos
+// ---------------------------------------------------------------------------
+
 /**
- * Generate video with Seedance 2.5 or other models via POST /v1/videos
+ * Trường gửi lên (theo /docs): prompt, model ("Seedance 2.5" | "Seedance 2.0"), duration (5,8,10,12,15,30),
+ * resolution (480 | 720 | 1080), ratio ("16:9" | "9:16" | "1:1"), audio, images (link https / base64), client_ref.
+ * Prompt gọi ảnh bằng @Image1, @Image2... (đúng cú pháp của API này).
  */
 export async function generateVideo({
-  model = 'seedance-2.5-720p',
+  model = 'Seedance 2.5',
   prompt,
   seconds = 5,
-  size = null,
-  aspectRatio = null,
+  resolution = '720p',
+  aspectRatio = '16:9',
+  audio = true,
   referenceImage = null,
   referenceImages = null,
-  resolution = null,
-  maxReferenceImages = 10,
-  pollIntervalMs = 5000,
-  maxWaitMs = 900000,
+  maxReferenceImages = 30,
+  pollIntervalMs = 15000,
+  maxWaitMs = 2 * 60 * 60 * 1000,
   signal = null,
   onHeartbeat = null,
 }) {
   const apiKey = getApiKey()
-  if (!apiKey) {
-    throw new Error('MISSING_API_KEY')
-  }
+  if (!apiKey) throw new Error('MISSING_API_KEY')
+  if (!prompt || !prompt.trim()) throw new Error('Vui lòng nhập mô tả (prompt) cho video!')
 
-  if (!prompt || !prompt.trim()) {
-    throw new Error('Vui lòng nhập mô tả (prompt) cho video!')
+  const images = selectedReferenceUrls(referenceImages, referenceImage)
+  if (images.length > maxReferenceImages) {
+    throw new Error(`Model ${model} chỉ hỗ trợ tối đa ${maxReferenceImages} ảnh tham chiếu (bạn đang chọn ${images.length} ảnh).`)
   }
-
-  const selectedRefCount = Array.isArray(referenceImages) ? referenceImages.filter(i => i.selected).length : 0
-  if (selectedRefCount > maxReferenceImages) {
-    throw new Error(`Model ${model} chỉ hỗ trợ tối đa ${maxReferenceImages} ảnh tham chiếu (bạn đang chọn ${selectedRefCount} ảnh).`)
-  }
-
-  const rawBaseUrl = getBaseUrl() || 'https://tuansuapi.store/v1'
-  const cleanBase = rawBaseUrl.replace(/\/+$/, '')
-  
-  // Endpoint direct call (tuansuapi.store supports full CORS with access-control-allow-origin: *)
-  let endpoint = `${cleanBase}/videos`
 
   const payload = {
-    model,
     prompt: prompt.trim(),
-    seconds: Number(seconds),
+    model,
+    duration: Number(seconds),
+    resolution: parseInt(String(resolution), 10) || 720,
+    ratio: aspectRatio || '16:9',
+    audio: Boolean(audio),
+    client_ref: newClientRef('vid'),
   }
-  if (size) payload.size = size
-  if (aspectRatio) payload.aspect_ratio = aspectRatio
-  // Tài liệu TuanSu: resolution chỉ nhận "720p" hoặc "1080p" (phải khớp hậu tố tên model).
-  // Model 480p đã có độ phân giải trong tên nên không gửi resolution.
-  if (resolution === '720p' || resolution === '1080p') payload.resolution = resolution
+  if (images.length > 0) payload.images = images
 
-  const referenceUrls = referenceImages && referenceImages.length > 0
-    ? referenceImages.filter(i => i.selected).map(img => img.url).filter(Boolean)
-    : (typeof referenceImage === 'string' && referenceImage.trim() ? [referenceImage.trim()] : [])
-
-  // Cách gửi ảnh với TuanSu (Seedance 2.5):
-  //  - ≥2 ảnh: input_reference dạng mảng + aspect_ratio — đã kiểm chứng (ảnh ngang → video 9:16).
-  //  - 1 ảnh: input_reference 1 ảnh luôn bị coi là khung hình đầu (gửi kèm tỉ lệ → 400). Theo hướng dẫn của
-  //    admin TuanSu, gửi reference_image_urls + omni_reference_task_type "reference" để vào chế độ tham chiếu
-  //    (omni) và chọn được tỉ lệ. Nếu máy chủ từ chối thì gửi lại kiểu khung hình đầu (không tỉ lệ).
-  // Prompt: thẻ @ImageN được đổi thành <Image N> theo cú pháp TuanSu hướng dẫn.
-  if (referenceUrls.length > 0) payload.prompt = toSeedanceImageTags(payload.prompt)
-  let refMode = 'none'
-  if (referenceUrls.length >= 2) {
-    payload.input_reference = referenceUrls.map(url => ({ image_url: url }))
-    refMode = 'tham chiếu'
-  } else if (referenceUrls.length === 1) {
-    if (payload.aspect_ratio || payload.size) {
-      payload.reference_image_urls = [referenceUrls[0]]
-      payload.omni_reference_task_type = 'reference'
-      refMode = 'omni reference'
-    } else {
-      payload.input_reference = { image_url: referenceUrls[0] }
-      refMode = 'khung hình đầu'
-    }
-  }
-
-  // Tổng thời gian chờ tối đa (Seedance có thể tới 2 giờ; model khác 15 phút)
   const controller = new AbortController()
   let isTimedOut = false
-  let taskId = null
+  let orderId = null
   const timeoutId = setTimeout(() => {
     isTimedOut = true
-    controller.abort(`Request timed out after ${Math.round(maxWaitMs / 1000)} seconds`)
+    controller.abort('timeout')
   }, maxWaitMs)
-
-  if (signal) {
-    signal.addEventListener('abort', () => {
-      controller.abort(signal.reason || 'User cancelled')
-    })
-  }
-
-  const postVideo = () => fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey.trim()}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-    signal: controller.signal,
-  })
+  signal?.addEventListener('abort', () => controller.abort(signal.reason || 'User cancelled'), { once: true })
 
   try {
-    let res = await postVideo()
-    let ratioDropped = false
-
-    // 1 ảnh chế độ omni bị từ chối → gửi lại kiểu khung hình đầu, bỏ tỉ lệ (lỗi 400 không bị tính phí)
-    if ((res.status === 400 || res.status === 422) && refMode === 'omni reference') {
-      await readApiError(res, 'video')
-      onHeartbeat?.({
-        timestamp: Date.now(),
-        message: 'Máy chủ không nhận chế độ tham chiếu với 1 ảnh — gửi lại dạng khung hình đầu (video theo tỉ lệ của ảnh)...',
-      })
-      delete payload.reference_image_urls
-      delete payload.omni_reference_task_type
-      payload.input_reference = { image_url: referenceUrls[0] }
-      delete payload.aspect_ratio
-      delete payload.size
-      refMode = 'khung hình đầu'
-      ratioDropped = true
-      res = await postVideo()
-    }
-    if (ratioDropped && res.ok) {
-      onHeartbeat?.({
-        timestamp: Date.now(),
-        message: 'Lưu ý: với 1 ảnh tham chiếu, video sẽ theo tỉ lệ của ảnh. Thêm ảnh thứ 2 để chọn được tỉ lệ.',
-      })
-    }
-
+    onHeartbeat?.({ timestamp: Date.now(), message: 'Đang gửi đơn tạo video...' })
+    const res = await fetch(`${API_BASE}/videos`, {
+      method: 'POST',
+      headers: authHeaders(apiKey, true),
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    })
     if (!res.ok) {
-      clearTimeout(timeoutId)
       const err = await readApiError(res, 'video')
-      if (res.status === 400 || res.status === 422) {
-        // Tóm tắt request (không chứa API key) để dò tham số bị từ chối
-        err.message += `\nRequest đã gửi: ${summarizeVideoPayload(payload, refMode)}`
-      }
+      if (res.status === 400 || res.status === 422) err.message += `\nRequest đã gửi: ${summarizePayload(payload)}`
       throw err
     }
 
-    // Stream reader to capture keepalive \n pulses and ensure the connection doesn't silently freeze
-    let rawText = ''
-    if (res.body && typeof res.body.getReader === 'function') {
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder('utf-8')
+    let data = await res.json()
+    orderId = data.id
+    if (!orderId) throw new Error('Máy chủ không trả về ID đơn video.')
+    onHeartbeat?.({
+      timestamp: Date.now(),
+      status: data.status,
+      message: `Đã nhận đơn (ID: ${orderId}${data.price ? ` · ${Number(data.price).toLocaleString('vi-VN')}đ` : ''}). Đang chờ tạo video...`,
+    })
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-
-          const chunk = decoder.decode(value, { stream: true })
-          rawText += chunk
-          if (onHeartbeat) {
-            onHeartbeat({
-              timestamp: Date.now(),
-              chunkLength: chunk.length,
-              totalLength: rawText.length,
-            })
-          }
-        }
-      } finally {
-        reader.releaseLock()
-      }
-    } else {
-      rawText = await res.text()
+    if (!DONE.includes(data.status)) {
+      data = await pollJob('video', orderId, apiKey, { signal: controller.signal, onHeartbeat, intervalMs: pollIntervalMs })
     }
-
     clearTimeout(timeoutId)
 
-    // Extract JSON payload safely past any keepalive \n pings
-    const jsonMatch = rawText.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
-      throw new Error('Không nhận được dữ liệu JSON hợp lệ từ máy chủ. Phản hồi nhận được: ' + (rawText.trim() || '(Rỗng)'))
-    }
+    const fileUrl = resolveVideoUrl(data.download_url || `/v1/videos/${orderId}/file`)
+    const directUrl = getDirectVideoUrl(fileUrl, apiKey)
 
-    let data
-    try {
-      data = JSON.parse(jsonMatch[0])
-    } catch (parseErr) {
-      throw new Error('Lỗi giải mã JSON từ máy chủ: ' + parseErr.message)
-    }
-
-    if (data.error) {
-      throw new Error(describeApiError(0, extractServerError(data.error), 'video'))
-    }
-
-    // If server queued or is processing the video, automatically poll until completed
-    if (['processing', 'queued', 'in_progress', 'pending', 'starting'].includes(data.status) && data.id) {
-      taskId = data.id
-      if (onHeartbeat) {
-        onHeartbeat({
-          timestamp: Date.now(),
-          status: data.status,
-          message: `Nhiệm vụ đã được xếp hàng (ID: ${data.id}). Đang chờ GPU render...`,
-        })
-      }
-      data = await pollVideoStatus(data.id, apiKey, cleanBase, {
-        signal: controller.signal,
-        onHeartbeat,
-        intervalMs: pollIntervalMs,
-      })
-    }
-
-    const rawVideoUrl = data.url || data.video_url || data.data?.[0]?.url || (data.id ? `/v1/videos/${data.id}/content?variant=video` : null)
-
-    if (!rawVideoUrl) {
-      throw new Error(data.message || 'Không tìm thấy liên kết video sau khi render.')
-    }
-
-    const videoUrl = resolveVideoUrl(rawVideoUrl, cleanBase)
-    const directUrl = getDirectVideoUrl(videoUrl, apiKey, cleanBase)
-
-    // Preload video blob safely using direct authenticated url & Bearer token
+    // Tải trước vào bộ nhớ để phát ổn định (máy chủ khuyên tải video về ngay khi xong)
     let blobUrl = null
     try {
-      blobUrl = await fetchVideoBlob(directUrl, apiKey, cleanBase)
+      blobUrl = await fetchVideoBlob(fileUrl, apiKey)
     } catch (blobErr) {
-      console.warn('Không thể nạp trước blob URL (sẽ dùng direct streaming):', blobErr)
+      console.warn('Không tải trước được video (sẽ phát trực tiếp):', blobErr)
     }
 
     return {
-      id: data.id || `vid_${Date.now()}`,
-      url: videoUrl,
+      id: orderId,
+      mediaType: 'video',
+      url: fileUrl,
       directUrl,
       blobUrl,
       prompt: prompt.trim(),
       model,
       seconds,
-      size,
+      resolution: `${payload.resolution}p`,
+      ratio: payload.ratio,
+      price: data.price ?? null,
+      faceSketched: Boolean(data.face_sketched),
       status: 'completed',
       createdAt: new Date().toISOString(),
       raw: data,
     }
   } catch (err) {
     clearTimeout(timeoutId)
-    const jobNote = taskId
-      ? `
-Job ${taskId} vẫn có thể tiếp tục chạy trên máy chủ và bị tính phí khi hoàn tất — kiểm tra bằng GET /v1/videos/${taskId}, đừng tạo lại ngay.`
+    const jobNote = orderId
+      ? `\nĐơn ${orderId} vẫn chạy trên máy chủ (vẫn tính phí nếu hoàn tất). Có thể xem lại sau bằng ID này.`
       : ''
     if (isTimedOut) {
-      throw new Error(`Đã chờ quá ${Math.round(maxWaitMs / 60000)} phút mà video chưa xong. Máy chủ có thể đang quá tải.${jobNote}`)
+      throw new Error(`Đã chờ quá ${Math.round(maxWaitMs / 60000)} phút mà video chưa xong.${jobNote}`)
     }
     if (err.name === 'AbortError' || signal?.aborted) {
-      throw new Error(`Đã dừng chờ video theo yêu cầu.${jobNote}`)
+      // Đơn còn đang xếp hàng thì hủy được và tự hoàn tiền (DELETE /v1/videos/{id})
+      if (orderId) {
+        const cancelled = await cancelJob('video', orderId, apiKey)
+        throw new Error(cancelled
+          ? `Đã hủy đơn ${orderId} và hoàn tiền vào ví.`
+          : `Đã dừng chờ video.${jobNote}`)
+      }
+      throw new Error('Đã hủy tạo video.')
     }
     if (err instanceof TypeError) {
-      throw new Error(`Không kết nối được tới Gateway (${err.message}). Kiểm tra mạng hoặc Base URL trong Cài đặt.`)
+      throw new Error(`Không kết nối được tới máy chủ (${err.message}). Kiểm tra kết nối mạng.`)
     }
     throw err
   }
 }
 
+/** Hủy đơn đang xếp hàng (chỉ khi còn queued) — tự hoàn tiền. Trả true nếu hủy được. */
+export async function cancelJob(kind, id, apiKey) {
+  try {
+    const res = await fetch(`${API_BASE}/${kind === 'image' ? 'images' : 'videos'}/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: authHeaders(apiKey || getApiKey()),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Tạo ảnh — POST /v1/images (xếp hàng rồi hỏi kết quả như video)
+// ---------------------------------------------------------------------------
+
 /**
- * Generate image via POST /v1/images/generations (or /v1/images/edits if reference image provided)
+ * Trường gửi lên: prompt, model (vd. "GPT Image 2.5"), n (1-4), ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3),
+ * images (tối đa 6 ảnh tham chiếu), client_ref.
  */
 export async function generateImage({
-  model = 'gpt-image-2',
+  model = 'GPT Image 2.5',
   prompt,
-  size = '1024x1024',
+  aspectRatio = null,
+  n = 1,
   referenceImage = null,
   referenceImages = null,
+  maxReferenceImages = 6,
+  pollIntervalMs = 5000,
+  maxWaitMs = 15 * 60 * 1000,
   signal = null,
   onHeartbeat = null,
 }) {
   const apiKey = getApiKey()
-  if (!apiKey) {
-    throw new Error('MISSING_API_KEY')
+  if (!apiKey) throw new Error('MISSING_API_KEY')
+  if (!prompt || !prompt.trim()) throw new Error('Vui lòng nhập mô tả (prompt) cho hình ảnh!')
+
+  const images = selectedReferenceUrls(referenceImages, referenceImage)
+  if (images.length > maxReferenceImages) {
+    throw new Error(`Tạo ảnh chỉ hỗ trợ tối đa ${maxReferenceImages} ảnh tham chiếu (bạn đang chọn ${images.length} ảnh).`)
   }
 
-  if (!prompt || !prompt.trim()) {
-    throw new Error('Vui lòng nhập mô tả (prompt) cho hình ảnh!')
-  }
-
-  const rawBaseUrl = getBaseUrl() || 'https://tuansuapi.store/v1'
-  const cleanBase = rawBaseUrl.replace(/\/+$/, '')
-
-  const imageList = Array.isArray(referenceImages) && referenceImages.length > 0
-    ? referenceImages.filter(i => i.selected).map(img => (typeof img === 'string' ? img : img.url)?.trim()).filter(Boolean)
-    : (referenceImage && referenceImage.trim() ? [referenceImage.trim()] : [])
-
-  const hasReference = imageList.length > 0
-  const endpoint = hasReference ? `${cleanBase}/images/edits` : `${cleanBase}/images/generations`
-
-  const payload = {
-    model,
-    prompt: prompt.trim(),
-    n: 1,
-    size,
-    response_format: 'url',
-  }
-
-  if (hasReference) {
-    payload.image = imageList.length > 1 ? imageList : imageList[0]
-  }
-
-  if (onHeartbeat) {
-    onHeartbeat({
-      timestamp: Date.now(),
-      status: 'generating',
-      message: 'Đang kết nối tới mô hình AI tạo ảnh...',
-    })
-  }
+  const payload = { prompt: prompt.trim(), model, n, client_ref: newClientRef('img') }
+  if (aspectRatio) payload.ratio = aspectRatio
+  if (images.length > 0) payload.images = images
 
   const controller = new AbortController()
   let isTimedOut = false
-  const timeoutId = setTimeout(() => {
-    isTimedOut = true
-    controller.abort('Request timed out after 180 seconds')
-  }, 180000)
-
-  if (signal) {
-    signal.addEventListener('abort', () => {
-      controller.abort(signal.reason || 'User cancelled')
-    })
-  }
+  let jobId = null
+  const timeoutId = setTimeout(() => { isTimedOut = true; controller.abort('timeout') }, maxWaitMs)
+  signal?.addEventListener('abort', () => controller.abort(signal.reason || 'User cancelled'), { once: true })
 
   try {
-    const res = await fetch(endpoint, {
+    onHeartbeat?.({ timestamp: Date.now(), status: 'generating', message: 'Đang gửi yêu cầu tạo ảnh...' })
+    const res = await fetch(`${API_BASE}/images`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey.trim()}`,
-        'Content-Type': 'application/json',
-      },
+      headers: authHeaders(apiKey, true),
       body: JSON.stringify(payload),
       signal: controller.signal,
     })
+    if (!res.ok) {
+      const err = await readApiError(res, 'image')
+      if (res.status === 400 || res.status === 422) err.message += `\nRequest đã gửi: ${summarizePayload(payload)}`
+      throw err
+    }
 
+    let data = await res.json()
+    jobId = data.id
+    if (!jobId) throw new Error('Máy chủ không trả về ID việc tạo ảnh.')
+    if (!DONE.includes(data.status)) {
+      data = await pollJob('image', jobId, apiKey, { signal: controller.signal, onHeartbeat, intervalMs: pollIntervalMs })
+    }
     clearTimeout(timeoutId)
 
-    if (!res.ok) {
-      throw await readApiError(res, 'image')
-    }
-
-    const data = await res.json()
-    if (data.error) {
-      throw new Error(describeApiError(0, extractServerError(data.error), 'image'))
-    }
-
-    let imageUrl = null
-    if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-      const item = data.data[0]
-      if (item.url) {
-        imageUrl = item.url
-      } else if (item.b64_json) {
-        imageUrl = item.b64_json.startsWith('data:') ? item.b64_json : `data:image/png;base64,${item.b64_json}`
-      }
-    } else if (data.url) {
-      imageUrl = data.url
-    }
-
-    if (!imageUrl) {
-      throw new Error('Không nhận được liên kết ảnh từ máy chủ.')
-    }
-
-    const resolvedUrl = resolveVideoUrl(imageUrl, cleanBase)
-    const directUrl = getDirectImageUrl(resolvedUrl, cleanBase)
+    const files = Array.isArray(data.images) && data.images.length > 0
+      ? data.images
+      : [`/v1/images/${jobId}/file/0`]
+    const fileUrl = resolveVideoUrl(files[0])
 
     return {
-      id: `img_${Date.now()}`,
+      id: jobId,
       mediaType: 'image',
-      url: resolvedUrl,
-      directUrl: directUrl || resolvedUrl,
+      url: fileUrl,
+      directUrl: getDirectImageUrl(fileUrl, apiKey),
+      allImages: files.map(f => resolveVideoUrl(f)),
       prompt: prompt.trim(),
       model,
-      size,
-      referenceImage: hasReference ? referenceImage : null,
+      ratio: payload.ratio || null,
+      price: data.price ?? null,
+      referenceImage: images[0] || null,
       status: 'completed',
       createdAt: new Date().toISOString(),
       raw: data,
     }
   } catch (err) {
     clearTimeout(timeoutId)
-    if (isTimedOut) {
-      throw new Error('Tạo ảnh quá 180 giây chưa có phản hồi (timeout). Máy chủ có thể đang quá tải, vui lòng thử lại.')
-    }
+    if (isTimedOut) throw new Error(`Tạo ảnh quá ${Math.round(maxWaitMs / 60000)} phút chưa xong${jobId ? ` (ID: ${jobId})` : ''}. Vui lòng thử lại sau.`)
     if (err.name === 'AbortError' || signal?.aborted) {
-      throw new Error('Quá trình tạo ảnh đã được hủy theo yêu cầu.')
+      if (jobId) await cancelJob('image', jobId, apiKey)
+      throw new Error('Đã hủy tạo ảnh.')
     }
     if (err instanceof TypeError) {
-      throw new Error(`Không kết nối được tới Gateway (${err.message}). Kiểm tra mạng hoặc Base URL trong Cài đặt.`)
+      throw new Error(`Không kết nối được tới máy chủ (${err.message}). Kiểm tra kết nối mạng.`)
     }
     throw err
   }
 }
 
+// ---------------------------------------------------------------------------
+// Kiểm tra key — GET /v1/me (không tốn tiền)
+// ---------------------------------------------------------------------------
 
-/**
- * Kiểm tra API Key bằng GET /v1/balance (chỉ đọc, KHÔNG trừ tiền — theo tài liệu).
- * Trả về kèm số dư khả dụng nếu có.
- */
-export async function testApiKey(apiKey, customBaseUrl) {
-  if (!apiKey || !apiKey.trim()) {
-    return { success: false, message: 'Vui lòng nhập API Key' }
-  }
-
-  const rawBaseUrl = customBaseUrl || getBaseUrl() || 'https://tuansuapi.store/v1'
-  const cleanBase = rawBaseUrl.replace(/\/+$/, '')
-  const headers = { 'Authorization': `Bearer ${apiKey.trim()}` }
-
+export async function testApiKey(apiKey) {
+  if (!apiKey || !apiKey.trim()) return { success: false, message: 'Vui lòng nhập API Key' }
   try {
-    const res = await fetch(`${cleanBase}/balance`, { method: 'GET', headers, cache: 'no-store' })
-
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}))
-      if (data.unlimited) {
-        return { success: true, message: 'API Key hợp lệ! Số dư: không giới hạn.' }
-      }
-      const fmt = (n) => Number(n).toLocaleString('vi-VN')
-      if (data.available_vnd != null) {
-        const reserved = data.reserved_vnd ? ` (đang giữ chỗ ${fmt(data.reserved_vnd)}đ)` : ''
-        const low = data.available_vnd < 2000 ? ' — Số dư thấp, có thể không đủ tạo video.' : ''
-        return { success: true, message: `API Key hợp lệ! Số dư khả dụng: ${fmt(data.available_vnd)}đ${reserved}${low}` }
-      }
-      return { success: true, message: 'API Key hợp lệ!' }
-    }
-
-    if (res.status === 409) {
-      return { success: true, message: 'API Key hợp lệ! (Key này không dùng số dư tiền nên không hiển thị số dư.)' }
-    }
-
-    // Base URL khác (vd: cổng Tunnel 2) có thể không có /balance → thử GET /models (cũng miễn phí)
-    if (res.status === 404 || res.status === 405) {
-      const modelsRes = await fetch(`${cleanBase}/models`, { method: 'GET', headers })
-      if (modelsRes.ok) {
-        return { success: true, message: 'API Key hợp lệ! (Base URL này không hỗ trợ xem số dư.)' }
-      }
-      const err = await readApiError(modelsRes, 'balance')
+    const res = await fetch(`${API_BASE}/me`, { headers: authHeaders(apiKey), cache: 'no-store' })
+    if (!res.ok) {
+      const err = await readApiError(res, 'balance')
       return { success: false, message: err.message }
     }
-
-    const err = await readApiError(res, 'balance')
-    return { success: false, message: err.message }
+    const me = await res.json()
+    const fmt = (n) => Number(n || 0).toLocaleString('vi-VN')
+    const sandbox = me.sandbox || apiKey.trim().startsWith('sk-test-') ? ' (khóa thử — không trừ tiền)' : ''
+    const low = me.can_create === false
+      ? ` — Chưa tạo được đơn: số dư dưới mức tối thiểu ${fmt(me.min_balance || 20000)}đ.`
+      : ''
+    return {
+      success: true,
+      message: `API Key hợp lệ${sandbox}! Số dư: ${fmt(me.balance)}đ · Đơn đang chạy: ${me.active_orders ?? 0}${low}`,
+    }
   } catch (e) {
     return { success: false, message: 'Lỗi kiểm tra kết nối: ' + e.message }
   }
@@ -793,6 +553,8 @@ export async function testApiKey(apiKey, customBaseUrl) {
  */
 export function openMediaInNewTab(url, title = 'Xem nội dung Media') {
   if (!url) return
+  // Link tương đối (vd. /api/sd/...) phải đổi thành tuyệt đối vì tab mới là about:blank
+  if (url.startsWith('/')) url = window.location.origin + url
 
   const isHttp = url.startsWith('http://') || url.startsWith('https://')
   if (isHttp) {

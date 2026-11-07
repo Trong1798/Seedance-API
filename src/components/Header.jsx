@@ -29,16 +29,16 @@ export default function Header({
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Tuansu Portal Link */}
+          {/* Hướng dẫn API / nạp ví (ví nạp trong bot Telegram) */}
           <a
-            href="https://tuansuapi.store/portal"
+            href="https://api.seedancecreationbot.online/guide"
             target="_blank"
             rel="noreferrer"
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-xs font-semibold text-zinc-300 hover:text-white transition shadow-sm group"
-            title="Tra cứu số dư KPI & Nạp VietQR tự động"
+            title="Nạp ví và lấy API key trong bot Telegram (xem hướng dẫn)"
           >
             <Wallet className="w-3.5 h-3.5 text-[#e5ff00]" />
-            <span>Nạp tiền / Số dư</span>
+            <span>Nạp ví / Hướng dẫn</span>
             <ExternalLink className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 transition" />
           </a>
 
