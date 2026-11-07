@@ -29,16 +29,16 @@ export default function Header({
 
         {/* Right Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Hướng dẫn API / nạp ví (ví nạp trong bot Telegram) */}
+          {/* Ví Xianfeng: xem số dư, nạp tiền bằng mã đổi (兑换码) */}
           <a
-            href="https://api.seedancecreationbot.online/guide"
+            href="https://xianfengapi.xyz/wallet"
             target="_blank"
             rel="noreferrer"
             className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 border border-zinc-800 hover:border-zinc-700 text-xs font-semibold text-zinc-300 hover:text-white transition shadow-sm group"
-            title="Nạp ví và lấy API key trong bot Telegram (xem hướng dẫn)"
+            title="Xem số dư và nạp tiền trên xianfengapi.xyz"
           >
             <Wallet className="w-3.5 h-3.5 text-[#e5ff00]" />
-            <span>Nạp ví / Hướng dẫn</span>
+            <span>Ví / Nạp tiền</span>
             <ExternalLink className="w-3 h-3 text-zinc-500 group-hover:text-zinc-300 transition" />
           </a>
 

@@ -1,26 +1,28 @@
 // ============================================================================
-// Seedance Creation Bot API (https://api.seedancecreationbot.online/docs)
-// Video: model "Seedance 2.5" | "Seedance 2.0", duration 5/8/10/12/15/30 giây (2.0 tối đa 15),
-//        resolution 480/720/1080, ratio 16:9 / 9:16 / 1:1, tối đa 30 ảnh tham chiếu.
+// Ảnh: Seedance Creation Bot API (https://api.seedancecreationbot.online/docs)
 // Ảnh:   8 model (xem bảng giá trong /guide), ratio 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, tối đa 6 ảnh tham chiếu.
 // Giá thật theo từng tài khoản: GET /v1/prices (cần API key).
 // ============================================================================
 
+// Video: Xianfeng API (仙凤API) — model "seedance-2.5" (https://xianfengapi.xyz/docs#model-seedance)
+//   seconds 4–30 (5–30 khi trên 9 ảnh), chỉ 720p, aspect_ratio 16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9,
+//   tối đa 30 ảnh tham chiếu, tính tiền theo video (CNY). Giá theo key: GET /v1/models.
 export const VIDEO_MODELS = [
   {
-    id: 'Seedance 2.5',
+    id: 'seedance-2.5',
     name: 'Seedance 2.5',
-    tag: 'ByteDance',
-    description: '480p / 720p / 1080p · 5–30 giây · có tiếng · tối đa 30 ảnh tham chiếu',
-    durations: [5, 8, 10, 12, 15, 30],
+    tag: 'Xianfeng',
+    description: '720p · 4–30 giây · tối đa 30 ảnh tham chiếu · tính tiền theo video',
+    durationRange: [4, 30],
+    durations: [5, 10, 15, 20, 25, 30],
     defaultDuration: 5,
-    supportedRatios: ['16:9', '9:16', '1:1'],
+    supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
     defaultRatio: '16:9',
-    supportedResolutions: ['480p', '720p', '1080p'],
+    supportedResolutions: ['720p'],
     defaultResolution: '720p',
     supportsImageToVideo: true,
     maxReferenceImages: 30,
-    // Tài liệu khuyên hỏi trạng thái mỗi 30 giây; dùng 15 giây để % cập nhật nhanh hơn (giới hạn 120 yêu cầu/phút)
+    // Tài liệu khuyên hỏi trạng thái mỗi 15–30 giây
     pollIntervalMs: 15000,
     maxWaitMs: 2 * 60 * 60 * 1000,
   },
@@ -166,42 +168,42 @@ export const INSPIRATION_PROMPTS = [
   {
     label: 'Tokyo Neon Drone',
     prompt: 'Cinematic drone shot flying through futuristic neon Tokyo at night, wet asphalt reflections, hyperrealistic 4k',
-    model: 'Seedance 2.5',
+    model: 'seedance-2.5',
     seconds: 10,
     ratio: '16:9'
   },
   {
     label: 'Golden Retriever',
     prompt: 'A cute Golden Retriever puppy running happily in autumn park with falling golden leaves, 4k ultra detailed',
-    model: 'Seedance 2.5',
+    model: 'seedance-2.5',
     seconds: 5,
     ratio: '16:9'
   },
   {
     label: 'Cyberpunk Girl',
     prompt: 'Portrait of a cyberpunk girl with glowing holographic cyberware looking gently at falling cherry blossom petals in rainy street',
-    model: 'Seedance 2.5',
+    model: 'seedance-2.5',
     seconds: 10,
     ratio: '9:16'
   },
   {
     label: 'Eagle Mountains',
     prompt: 'A majestic eagle soaring gracefully over dramatic snow-capped alpine mountains in golden hour sunlight',
-    model: 'Seedance 2.5',
+    model: 'seedance-2.5',
     seconds: 15,
     ratio: '16:9'
   },
   {
     label: 'Futuristic Supercar',
     prompt: 'A sleek futuristic concept supercar speeding on coastal cliff highway at twilight, cinematic camera tracking',
-    model: 'Seedance 2.5',
+    model: 'seedance-2.5',
     seconds: 10,
     ratio: '16:9'
   },
   {
     label: 'Sci-Fi Movie',
     prompt: 'Epic anamorphic widescreen shot of a massive starship emerging from a hyperspace nebula above a crimson alien planet, cinematic lighting',
-    model: 'Seedance 2.5',
+    model: 'seedance-2.5',
     seconds: 10,
     ratio: '16:9'
   }

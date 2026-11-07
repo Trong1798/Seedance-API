@@ -1,13 +1,16 @@
 import { getApiKey } from './storage.js'
 
 // ============================================================================
-// Seedance Creation Bot API — https://api.seedancecreationbot.online (tài liệu: /docs, /guide)
-// Máy chủ không hỗ trợ CORS nên mọi request đi qua lớp trung gian của web: /api/sd/<đường dẫn>
-// (api/sd.js trên Vercel, middleware trong vite.config.js khi chạy trên máy).
+// VIDEO: Xianfeng API (仙凤API) — https://xianfengapi.xyz/docs#model-seedance
+//   Có hỗ trợ CORS nên gọi thẳng từ trình duyệt. Model "seedance-2.5", tính tiền theo video (CNY).
+// ẢNH:  Seedance Creation Bot API — https://api.seedancecreationbot.online (qua lớp trung gian /api/sd
+//   vì máy chủ đó không hỗ trợ CORS). Tài liệu Xianfeng không có API tạo ảnh.
 // ============================================================================
+export const XIANFENG_ORIGIN = 'https://xianfengapi.xyz'
+export const XIANFENG_BASE = `${XIANFENG_ORIGIN}/v1`
 export const SEEDANCE_UPSTREAM = 'https://api.seedancecreationbot.online'
 export const API_BASE = '/api/sd/v1'
-const WALLET_HINT = 'Nạp ví trong bot Telegram của Seedance (số dư tối thiểu 20.000đ).'
+const WALLET_HINT = 'Nạp tiền trong mục Ví (钱包) trên xianfengapi.xyz.'
 
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
   const t = setTimeout(resolve, ms)
@@ -63,9 +66,15 @@ export function describeApiError(status, { message = '', code = '', extra = '' }
   const what = kind === 'image' ? 'tạo ảnh' : 'tạo video'
   let friendly
   if (status === 401) {
-    friendly = 'API Key sai hoặc đã bị thu hồi. Lấy khóa mới bằng lệnh /api new trong bot rồi dán vào phần Cài đặt.'
+    friendly = 'API Key sai, đã bị xóa hoặc hết hạn. Tạo key mới trong mục API 密钥 trên xianfengapi.xyz rồi dán vào phần Cài đặt.'
   } else if (status === 402) {
     friendly = `Số dư không đủ để ${what}. ${WALLET_HINT}`
+  } else if (status === 403) {
+    friendly = `Số dư hoặc hạn mức của key không đủ, hoặc key chưa được bật model này. ${WALLET_HINT}`
+  } else if (status === 400 && code === 'invalid_reference') {
+    friendly = 'Ảnh tham chiếu không mở được hoặc sai định dạng (cần link https:// công khai trả về đúng file ảnh).'
+  } else if (status === 400 && code === 'task_not_exist') {
+    friendly = 'Không tìm thấy đơn này (sai ID hoặc không phải key này tạo).'
   } else if (status === 400 || status === 422) {
     friendly = 'Dữ liệu gửi lên không hợp lệ (model, thời lượng, độ phân giải, tỉ lệ hoặc ảnh tham chiếu).'
   } else if (status === 404) {
@@ -73,11 +82,19 @@ export function describeApiError(status, { message = '', code = '', extra = '' }
   } else if (status === 409) {
     friendly = 'Video chưa sẵn sàng hoặc đơn không hủy được.'
   } else if (status === 429) {
-    friendly = 'Gửi quá nhanh (tối đa 120 yêu cầu/phút) hoặc đang có quá nhiều đơn chạy cùng lúc (tối đa 300). Vui lòng thử lại sau.'
+    friendly = 'Gửi quá nhanh, máy chủ tạm chặn. Đợi một lúc rồi thử lại (không bị trừ tiền).'
+  } else if (status === 503 && code === 'model_not_found') {
+    friendly = 'Key này chưa được dùng model này (sai tên model hoặc nhóm của key không có model). Kiểm tra trong mục API 密钥.'
+  } else if (status === 503) {
+    friendly = 'Máy chủ đang bận. Đợi khoảng 30 giây rồi thử lại. Không bị trừ tiền.'
+  } else if (status === 504 && code === 'convert_timeout') {
+    friendly = 'Xử lý ảnh tham chiếu quá lâu nên đơn chưa được tạo. Không bị trừ tiền; thử lại hoặc dùng ảnh nhỏ hơn.'
+  } else if (status === 507) {
+    friendly = 'Kho lưu tạm của máy chủ đang đầy. Thử lại sau. Không bị trừ tiền.'
   } else if (status === 499 || status === 524 || status === 504) {
     friendly = 'Kết nối bị ngắt do quá thời gian chờ. Vui lòng thử lại.'
   } else if (status >= 500) {
-    friendly = 'Máy chủ Seedance đang gặp lỗi tạm thời. Đơn lỗi được tự hoàn tiền.'
+    friendly = 'Máy chủ đang gặp lỗi tạm thời. Đơn lỗi được tự hoàn tiền.'
   } else {
     friendly = message || `Lỗi không xác định khi ${what}.`
   }
@@ -115,9 +132,15 @@ export function resolveVideoUrl(rawUrl) {
   if (!rawUrl) return null
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl
   if (rawUrl.startsWith(SEEDANCE_UPSTREAM)) return `/api/sd${rawUrl.slice(SEEDANCE_UPSTREAM.length)}`
+  // Xianfeng trả content_url dạng tương đối: /v1/videos/{id}/content
+  if (rawUrl.startsWith('/v1/videos/')) return `${XIANFENG_ORIGIN}${rawUrl}`
   if (rawUrl.startsWith('/v1/')) return `/api/sd${rawUrl}`
   return rawUrl
 }
+
+/** Link tải video của Xianfeng cần header Authorization (content_url); link ký sẵn (download_url) thì không */
+const isXianfengAuthUrl = (url) => typeof url === 'string' &&
+  url.startsWith(`${XIANFENG_BASE}/videos/`) && url.split('?')[0].endsWith('/content')
 
 const isProxyUrl = (url) => typeof url === 'string' && url.startsWith('/api/sd/')
 
@@ -168,7 +191,7 @@ export async function fetchVideoBlob(url, apiKey) {
   if (url.startsWith('blob:') || url.startsWith('data:')) return url
   const resolved = resolveVideoUrl(url)
   const key = (apiKey || getApiKey() || '').trim()
-  const headers = isProxyUrl(resolved) && key ? authHeaders(key) : {}
+  const headers = (isProxyUrl(resolved) || isXianfengAuthUrl(resolved)) && key ? authHeaders(key) : {}
   const res = await fetch(resolved, { credentials: 'omit', headers })
   if (!res.ok) {
     const err = await readApiError(res, 'status')
@@ -181,7 +204,7 @@ export async function fetchVideoBlob(url, apiKey) {
 // Theo dõi đơn (video & ảnh dùng chung)
 // ---------------------------------------------------------------------------
 
-const DONE = ['completed']
+const DONE = ['completed', 'succeeded']
 const FAILED = ['failed', 'cancelled', 'canceled', 'error']
 
 /**
@@ -189,7 +212,9 @@ const FAILED = ['failed', 'cancelled', 'canceled', 'error']
  * Lỗi tạm thời (mạng, 5xx, 429) được thử lại; lỗi 5xx liên tục quá maxServerErrorMs thì dừng và báo rõ.
  */
 export async function pollJob(kind, id, apiKey, { signal, onHeartbeat, intervalMs = 15000, maxServerErrorMs = 5 * 60 * 1000 } = {}) {
-  const endpoint = `${API_BASE}/${kind === 'image' ? 'images' : 'videos'}/${encodeURIComponent(id)}`
+  const endpoint = kind === 'image'
+    ? `${API_BASE}/images/${encodeURIComponent(id)}`
+    : `${XIANFENG_BASE}/videos/${encodeURIComponent(id)}`
   const label = kind === 'image' ? 'ảnh' : 'video'
   let firstServerErrorAt = null
 
@@ -232,7 +257,7 @@ export async function pollJob(kind, id, apiKey, { signal, onHeartbeat, intervalM
       timestamp: Date.now(),
       status: data.status,
       progress,
-      message: data.status === 'queued'
+      message: ['queued', 'pending'].includes(data.status)
         ? `Đơn đang xếp hàng (ID: ${id})...`
         : `Đang tạo ${label}... ${progress != null ? `${progress}%` : ''}`,
     })
@@ -240,7 +265,7 @@ export async function pollJob(kind, id, apiKey, { signal, onHeartbeat, intervalM
     if (DONE.includes(data.status)) return data
     if (FAILED.includes(data.status)) {
       const reason = typeof data.error === 'string' ? data.error : (data.error?.message || data.message || '')
-      const refundNote = data.refunded ? 'Đã tự hoàn tiền vào ví.' : 'Đơn lỗi / bị từ chối được tự hoàn tiền vào ví.'
+      const refundNote = 'Đơn thất bại được tự hoàn lại toàn bộ tiền đã giữ.'
       throw new Error(
         `${label[0].toUpperCase()}${label.slice(1)} ${data.status === 'failed' ? 'thất bại' : 'đã bị hủy'} (ID: ${id})` +
         `${reason ? `: ${reason}` : ''}\n${refundNote}`
@@ -275,21 +300,28 @@ function summarizePayload(payload) {
 }
 
 // ---------------------------------------------------------------------------
-// Tạo video — POST /v1/videos
+// Tạo video — Xianfeng POST https://xianfengapi.xyz/v1/videos
 // ---------------------------------------------------------------------------
 
 /**
- * Trường gửi lên (theo /docs): prompt, model ("Seedance 2.5" | "Seedance 2.0"), duration (5,8,10,12,15,30),
- * resolution (480 | 720 | 1080), ratio ("16:9" | "9:16" | "1:1"), audio, images (link https / base64), client_ref.
- * Prompt gọi ảnh bằng @Image1, @Image2... (đúng cú pháp của API này).
+ * Đổi thẻ @Image1, @Image2... trong prompt thành 图片1, 图片2... — cách tài liệu Xianfeng
+ * dặn gọi ảnh tham chiếu theo thứ tự trong mảng images (「图片1」「视频1」「音频1」).
+ */
+export function toXianfengImageTags(text) {
+  return text.replace(/@Image\s*(\d+)/gi, (_, n) => `图片${n}`)
+}
+
+/**
+ * Trường gửi lên (theo tài liệu seedance-2.5): model, prompt (bắt buộc, ≤45000 ký tự), seconds (số nguyên
+ * 4–30; 5–30 khi có trên 9 ảnh), aspect_ratio (auto, 16:9, 9:16, 1:1, 4:3, 3:4, 21:9), resolution "720p",
+ * images (tối đa 30, link https hoặc Data URL, chỉ làm ảnh tham chiếu — không có ảnh đầu/cuối).
  */
 export async function generateVideo({
-  model = 'Seedance 2.5',
+  model = 'seedance-2.5',
   prompt,
   seconds = 5,
   resolution = '720p',
   aspectRatio = '16:9',
-  audio = true,
   referenceImage = null,
   referenceImages = null,
   maxReferenceImages = 30,
@@ -306,30 +338,31 @@ export async function generateVideo({
   if (images.length > maxReferenceImages) {
     throw new Error(`Model ${model} chỉ hỗ trợ tối đa ${maxReferenceImages} ảnh tham chiếu (bạn đang chọn ${images.length} ảnh).`)
   }
+  const sec = Math.round(Number(seconds))
+  const minSec = images.length > 9 ? 5 : 4
+  if (!(sec >= minSec && sec <= 30)) {
+    throw new Error(`Thời lượng phải từ ${minSec} đến 30 giây${images.length > 9 ? ' khi dùng trên 9 ảnh tham chiếu' : ''}.`)
+  }
 
   const payload = {
-    prompt: prompt.trim(),
     model,
-    duration: Number(seconds),
-    resolution: parseInt(String(resolution), 10) || 720,
-    ratio: aspectRatio || '16:9',
-    audio: Boolean(audio),
-    client_ref: newClientRef('vid'),
+    prompt: images.length > 0 ? toXianfengImageTags(prompt.trim()) : prompt.trim(),
+    seconds: sec,
+    aspect_ratio: aspectRatio || '16:9',
+    resolution: resolution || '720p',
   }
   if (images.length > 0) payload.images = images
 
   const controller = new AbortController()
   let isTimedOut = false
-  let orderId = null
-  const timeoutId = setTimeout(() => {
-    isTimedOut = true
-    controller.abort('timeout')
-  }, maxWaitMs)
+  let taskId = null
+  const timeoutId = setTimeout(() => { isTimedOut = true; controller.abort('timeout') }, maxWaitMs)
   signal?.addEventListener('abort', () => controller.abort(signal.reason || 'User cancelled'), { once: true })
 
   try {
-    onHeartbeat?.({ timestamp: Date.now(), message: 'Đang gửi đơn tạo video...' })
-    const res = await fetch(`${API_BASE}/videos`, {
+    // Tài liệu: có ảnh tham chiếu thì bước gửi đơn có thể mất từ vài chục giây tới vài phút
+    onHeartbeat?.({ timestamp: Date.now(), message: 'Đang gửi đơn tạo video (có ảnh tham chiếu có thể mất vài chục giây)...' })
+    const res = await fetch(`${XIANFENG_BASE}/videos`, {
       method: 'POST',
       headers: authHeaders(apiKey, true),
       body: JSON.stringify(payload),
@@ -342,23 +375,19 @@ export async function generateVideo({
     }
 
     let data = await res.json()
-    orderId = data.id
-    if (!orderId) throw new Error('Máy chủ không trả về ID đơn video.')
-    onHeartbeat?.({
-      timestamp: Date.now(),
-      status: data.status,
-      message: `Đã nhận đơn (ID: ${orderId}${data.price ? ` · ${Number(data.price).toLocaleString('vi-VN')}đ` : ''}). Đang chờ tạo video...`,
-    })
+    taskId = data.id
+    if (!taskId) throw new Error('Máy chủ không trả về ID đơn video.')
+    onHeartbeat?.({ timestamp: Date.now(), status: data.status, message: `Đã nhận đơn (ID: ${taskId}). Đang chờ tạo video...` })
 
     if (!DONE.includes(data.status)) {
-      data = await pollJob('video', orderId, apiKey, { signal: controller.signal, onHeartbeat, intervalMs: pollIntervalMs })
+      data = await pollJob('video', taskId, apiKey, { signal: controller.signal, onHeartbeat, intervalMs: pollIntervalMs })
     }
     clearTimeout(timeoutId)
 
-    const fileUrl = resolveVideoUrl(data.download_url || `/v1/videos/${orderId}/file`)
-    const directUrl = getDirectVideoUrl(fileUrl, apiKey)
+    // Ưu tiên link ký sẵn (download_url/url: không cần key, hết hạn sau 24 giờ); không có thì dùng content_url + key
+    const signedUrl = data.download_url || data.url || null
+    const fileUrl = signedUrl || resolveVideoUrl(data.content_url || `/v1/videos/${taskId}/content`)
 
-    // Tải trước vào bộ nhớ để phát ổn định (máy chủ khuyên tải video về ngay khi xong)
     let blobUrl = null
     try {
       blobUrl = await fetchVideoBlob(fileUrl, apiKey)
@@ -367,51 +396,42 @@ export async function generateVideo({
     }
 
     return {
-      id: orderId,
+      id: taskId,
       mediaType: 'video',
       url: fileUrl,
-      directUrl,
+      directUrl: fileUrl,
       blobUrl,
+      downloadExpiresAt: data.download_expires_at || null,
       prompt: prompt.trim(),
       model,
-      seconds,
-      resolution: `${payload.resolution}p`,
-      ratio: payload.ratio,
-      price: data.price ?? null,
-      faceSketched: Boolean(data.face_sketched),
+      seconds: sec,
+      resolution: payload.resolution,
+      ratio: payload.aspect_ratio,
       status: 'completed',
       createdAt: new Date().toISOString(),
       raw: data,
     }
   } catch (err) {
     clearTimeout(timeoutId)
-    const jobNote = orderId
-      ? `\nĐơn ${orderId} vẫn chạy trên máy chủ (vẫn tính phí nếu hoàn tất). Có thể xem lại sau bằng ID này.`
+    const jobNote = taskId
+      ? `\nĐơn ${taskId} vẫn chạy trên máy chủ (vẫn tính phí nếu hoàn tất). Xem lại trong mục 任务日志 (nhật ký tác vụ) trên xianfengapi.xyz, đừng gửi lại đơn mới.`
       : ''
-    if (isTimedOut) {
-      throw new Error(`Đã chờ quá ${Math.round(maxWaitMs / 60000)} phút mà video chưa xong.${jobNote}`)
-    }
+    if (isTimedOut) throw new Error(`Đã chờ quá ${Math.round(maxWaitMs / 60000)} phút mà video chưa xong.${jobNote}`)
     if (err.name === 'AbortError' || signal?.aborted) {
-      // Đơn còn đang xếp hàng thì hủy được và tự hoàn tiền (DELETE /v1/videos/{id})
-      if (orderId) {
-        const cancelled = await cancelJob('video', orderId, apiKey)
-        throw new Error(cancelled
-          ? `Đã hủy đơn ${orderId} và hoàn tiền vào ví.`
-          : `Đã dừng chờ video.${jobNote}`)
-      }
-      throw new Error('Đã hủy tạo video.')
+      throw new Error(taskId ? `Đã dừng chờ video.${jobNote}` : 'Đã hủy tạo video.')
     }
     if (err instanceof TypeError) {
-      throw new Error(`Không kết nối được tới máy chủ (${err.message}). Kiểm tra kết nối mạng.`)
+      throw new Error(`Không kết nối được tới máy chủ (${err.message}). Kiểm tra kết nối mạng.${jobNote}`)
     }
     throw err
   }
 }
 
-/** Hủy đơn đang xếp hàng (chỉ khi còn queued) — tự hoàn tiền. Trả true nếu hủy được. */
+/** Hủy việc tạo ảnh đang xếp hàng (Seedance Creation Bot) — tự hoàn tiền. Trả true nếu hủy được. */
 export async function cancelJob(kind, id, apiKey) {
+  if (kind !== 'image') return false
   try {
-    const res = await fetch(`${API_BASE}/${kind === 'image' ? 'images' : 'videos'}/${encodeURIComponent(id)}`, {
+    const res = await fetch(`${API_BASE}/images/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: authHeaders(apiKey || getApiKey()),
     })
@@ -524,21 +544,19 @@ export async function generateImage({
 export async function testApiKey(apiKey) {
   if (!apiKey || !apiKey.trim()) return { success: false, message: 'Vui lòng nhập API Key' }
   try {
-    const res = await fetch(`${API_BASE}/me`, { headers: authHeaders(apiKey), cache: 'no-store' })
+    const res = await fetch(`${XIANFENG_BASE}/models`, { headers: authHeaders(apiKey), cache: 'no-store' })
     if (!res.ok) {
       const err = await readApiError(res, 'balance')
       return { success: false, message: err.message }
     }
-    const me = await res.json()
-    const fmt = (n) => Number(n || 0).toLocaleString('vi-VN')
-    const sandbox = me.sandbox || apiKey.trim().startsWith('sk-test-') ? ' (khóa thử — không trừ tiền)' : ''
-    const low = me.can_create === false
-      ? ` — Chưa tạo được đơn: số dư dưới mức tối thiểu ${fmt(me.min_balance || 20000)}đ.`
-      : ''
-    return {
-      success: true,
-      message: `API Key hợp lệ${sandbox}! Số dư: ${fmt(me.balance)}đ · Đơn đang chạy: ${me.active_orders ?? 0}${low}`,
+    const list = (await res.json())?.data || []
+    const sd = list.find(m => m.id === 'seedance-2.5')
+    if (!sd) {
+      const names = list.map(m => m.id).slice(0, 8).join(', ')
+      return { success: false, message: `API Key hợp lệ nhưng chưa được dùng model seedance-2.5.${names ? ` Model key này dùng được: ${names}` : ''}` }
     }
+    const price = sd.pricing?.price != null ? ` · Giá: ${sd.pricing.price} ${sd.pricing.currency || 'CNY'}/video` : ''
+    return { success: true, message: `API Key hợp lệ! Dùng được seedance-2.5${price}.` }
   } catch (e) {
     return { success: false, message: 'Lỗi kiểm tra kết nối: ' + e.message }
   }

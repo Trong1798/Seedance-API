@@ -53,7 +53,10 @@ export default function App() {
     const m = VIDEO_MODELS.find(v => v.id === model)
     if (!m) return
     if (m.supportedResolutions && !m.supportedResolutions.includes(resolution)) setResolution(m.defaultResolution)
-    if (!m.durations.includes(seconds)) setSeconds(m.defaultDuration)
+    const okSeconds = m.durationRange
+      ? seconds >= m.durationRange[0] && seconds <= m.durationRange[1]
+      : m.durations.includes(seconds)
+    if (!okSeconds) setSeconds(m.defaultDuration)
     if (!m.supportedRatios.includes(aspectRatio)) setAspectRatio(m.defaultRatio)
   }, [mode, model, resolution, seconds, aspectRatio])
 
@@ -182,7 +185,9 @@ export default function App() {
         const effectiveResolution = currentModelObj.supportedResolutions?.includes(resolution)
           ? resolution
           : currentModelObj.defaultResolution
-        const effectiveSeconds = currentModelObj.durations.includes(seconds) ? seconds : currentModelObj.defaultDuration
+        const effectiveSeconds = currentModelObj.durationRange
+          ? Math.min(currentModelObj.durationRange[1], Math.max(currentModelObj.durationRange[0], seconds))
+          : (currentModelObj.durations.includes(seconds) ? seconds : currentModelObj.defaultDuration)
 
         const result = await generateVideo({
           model: currentModelObj.id,
@@ -292,7 +297,7 @@ export default function App() {
       </main>
 
       <footer className="border-t border-zinc-800/80 py-6 text-center text-xs text-zinc-500">
-        <p>Seedance 2.5 Cinema Studio • Seedance Creation Bot API</p>
+        <p>Seedance 2.5 Cinema Studio • Xianfeng API</p>
         <p className="text-[11px] text-zinc-600 mt-1">API Key lưu trữ cục bộ tại trình duyệt (LocalStorage)</p>
       </footer>
 

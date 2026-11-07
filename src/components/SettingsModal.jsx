@@ -40,7 +40,7 @@ export default function SettingsModal({ isOpen, onClose, onApiKeyChange }) {
             <div className="p-2 rounded-xl bg-zinc-800 text-[#e5ff00]"><Key className="w-4 h-4" /></div>
             <div>
               <h3 className="text-sm font-bold text-white">Cài đặt API Key</h3>
-              <p className="text-[11px] text-zinc-400">Seedance Creation Bot API</p>
+              <p className="text-[11px] text-zinc-400">Xianfeng API (仙凤API) · seedance-2.5</p>
             </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400"><X className="w-4 h-4" /></button>
@@ -48,14 +48,14 @@ export default function SettingsModal({ isOpen, onClose, onApiKeyChange }) {
 
         <div className="mt-3.5 p-2.5 bg-emerald-500/10 border border-emerald-500/25 rounded-xl flex items-start gap-2 text-[11px] text-emerald-200">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-          <span><b>Lưu cục bộ:</b> API Key chỉ lưu trên trình duyệt (LocalStorage) của bạn. Khi tạo video, key được gửi qua máy chủ trung gian của chính web này (/api/sd) tới Seedance, không lưu lại ở đâu khác.</span>
+          <span><b>Lưu cục bộ:</b> API Key chỉ lưu trên trình duyệt (LocalStorage) của bạn và chỉ được gửi thẳng tới xianfengapi.xyz khi tạo video.</span>
         </div>
 
         <div className="mt-4 space-y-1">
           <div className="flex items-center justify-between text-xs text-zinc-300">
             <label className="font-semibold">API Key:</label>
-            <a href="https://api.seedancecreationbot.online/guide" target="_blank" rel="noreferrer" className="text-[#e5ff00] hover:underline flex items-center gap-0.5 text-[11px]">
-              Lấy key: gõ /api new trong bot <ExternalLink className="w-2.5 h-2.5" />
+            <a href="https://xianfengapi.xyz/console/token" target="_blank" rel="noreferrer" className="text-[#e5ff00] hover:underline flex items-center gap-0.5 text-[11px]">
+              Tạo key tại mục API 密钥 <ExternalLink className="w-2.5 h-2.5" />
             </a>
           </div>
           <div className="relative">
