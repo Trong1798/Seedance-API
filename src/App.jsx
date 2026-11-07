@@ -196,6 +196,7 @@ export default function App() {
           aspectRatio: effectiveRatio,
           resolution: effectiveResolution,
           maxReferenceImages: currentModelObj.maxReferenceImages ?? 30,
+          apiStyle: currentModelObj.apiStyle,
           pollIntervalMs: currentModelObj.pollIntervalMs,
           maxWaitMs: currentModelObj.maxWaitMs,
           referenceImage,

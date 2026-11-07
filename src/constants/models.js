@@ -4,27 +4,43 @@
 // Giá thật theo từng tài khoản: GET /v1/prices (cần API key).
 // ============================================================================
 
-// Video: Xianfeng API (仙凤API) — model "seedance-2.5" (https://xianfengapi.xyz/docs#model-seedance)
-//   seconds 4–30 (5–30 khi trên 9 ảnh), chỉ 720p, aspect_ratio 16:9 / 9:16 / 1:1 / 4:3 / 3:4 / 21:9,
-//   tối đa 30 ảnh tham chiếu, tính tiền theo video (CNY). Giá theo key: GET /v1/models.
+// Video: Xianfeng API (仙凤API) — https://xianfengapi.xyz/docs
+//   Hai model Seedance 2.5 (720p, 4–30 giây; 5–30 khi trên 9 ảnh; tối đa 30 ảnh tham chiếu; tính tiền theo video, CNY).
+//   Giá ghi trong tag là giá trên trang model lúc cập nhật; giá thật theo key xem bằng GET /v1/models.
+const XIANFENG_SEEDANCE_COMMON = {
+  durationRange: [4, 30],
+  durations: [5, 10, 15, 20, 25, 30],
+  defaultDuration: 5,
+  supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
+  defaultRatio: '16:9',
+  supportedResolutions: ['720p'],
+  defaultResolution: '720p',
+  supportsImageToVideo: true,
+  maxReferenceImages: 30,
+  // Tài liệu khuyên hỏi trạng thái mỗi 15–30 giây
+  pollIntervalMs: 15000,
+  maxWaitMs: 2 * 60 * 60 * 1000,
+}
+
 export const VIDEO_MODELS = [
   {
+    ...XIANFENG_SEEDANCE_COMMON,
+    // Mục "seedance-2.5 · 全参考视频": ảnh gửi dạng chuỗi link, prompt gọi ảnh bằng 图片1, tỉ lệ bằng aspect_ratio
     id: 'seedance-2.5',
     name: 'Seedance 2.5',
-    tag: 'Xianfeng',
-    description: '720p · 4–30 giây · tối đa 30 ảnh tham chiếu · tính tiền theo video',
-    durationRange: [4, 30],
-    durations: [5, 10, 15, 20, 25, 30],
-    defaultDuration: 5,
-    supportedRatios: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9'],
-    defaultRatio: '16:9',
-    supportedResolutions: ['720p'],
-    defaultResolution: '720p',
-    supportsImageToVideo: true,
-    maxReferenceImages: 30,
-    // Tài liệu khuyên hỏi trạng thái mỗi 15–30 giây
-    pollIntervalMs: 15000,
-    maxWaitMs: 2 * 60 * 60 * 1000,
+    tag: '5,6 ¥/video',
+    description: 'seedance-2.5 · 720p · 4–30 giây · tối đa 30 ảnh tham chiếu',
+    apiStyle: { imageTag: '图片', imagesAsObjects: false, ratioField: 'aspect_ratio' },
+  },
+  {
+    ...XIANFENG_SEEDANCE_COMMON,
+    // Mục "JD2.5满参 · 全参考视频": ảnh gửi dạng {"url"}, prompt gọi ảnh bằng @图片1, tỉ lệ bằng ratio,
+    // không gửi seconds thì mặc định 30 giây (web luôn gửi seconds)
+    id: 'JD2.5满参',
+    name: 'Seedance 2.5 · JD满参',
+    tag: '4,3 ¥/video',
+    description: 'JD2.5满参 · 720p · 4–30 giây · tối đa 30 ảnh tham chiếu · rẻ hơn',
+    apiStyle: { imageTag: '@图片', imagesAsObjects: true, ratioField: 'ratio' },
   },
 ]
 

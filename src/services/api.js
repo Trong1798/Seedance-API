@@ -307,8 +307,8 @@ function summarizePayload(payload) {
  * Đổi thẻ @Image1, @Image2... trong prompt thành 图片1, 图片2... — cách tài liệu Xianfeng
  * dặn gọi ảnh tham chiếu theo thứ tự trong mảng images (「图片1」「视频1」「音频1」).
  */
-export function toXianfengImageTags(text) {
-  return text.replace(/@Image\s*(\d+)/gi, (_, n) => `图片${n}`)
+export function toXianfengImageTags(text, tag = '图片') {
+  return text.replace(/@Image\s*(\d+)/gi, (_, n) => `${tag}${n}`)
 }
 
 /**
@@ -327,6 +327,10 @@ export async function generateVideo({
   maxReferenceImages = 30,
   pollIntervalMs = 15000,
   maxWaitMs = 2 * 60 * 60 * 1000,
+  // Mỗi model Xianfeng có cách viết riêng (xem constants/models.js):
+  //  seedance-2.5 → 图片1, images là chuỗi link, aspect_ratio
+  //  JD2.5满参    → @图片1, images là {"url"}, ratio
+  apiStyle = { imageTag: '图片', imagesAsObjects: false, ratioField: 'aspect_ratio' },
   signal = null,
   onHeartbeat = null,
 }) {
@@ -346,12 +350,14 @@ export async function generateVideo({
 
   const payload = {
     model,
-    prompt: images.length > 0 ? toXianfengImageTags(prompt.trim()) : prompt.trim(),
+    prompt: images.length > 0 ? toXianfengImageTags(prompt.trim(), apiStyle.imageTag || '图片') : prompt.trim(),
     seconds: sec,
-    aspect_ratio: aspectRatio || '16:9',
+    [apiStyle.ratioField || 'aspect_ratio']: aspectRatio || '16:9',
     resolution: resolution || '720p',
   }
-  if (images.length > 0) payload.images = images
+  if (images.length > 0) {
+    payload.images = apiStyle.imagesAsObjects ? images.map(url => ({ url })) : images
+  }
 
   const controller = new AbortController()
   let isTimedOut = false
@@ -406,7 +412,7 @@ export async function generateVideo({
       model,
       seconds: sec,
       resolution: payload.resolution,
-      ratio: payload.aspect_ratio,
+      ratio: aspectRatio || '16:9',
       status: 'completed',
       createdAt: new Date().toISOString(),
       raw: data,
