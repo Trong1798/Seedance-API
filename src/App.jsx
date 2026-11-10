@@ -7,9 +7,9 @@ import VideoResult from './components/VideoResult'
 import SettingsModal from './components/SettingsModal'
 import ReferenceModal from './components/ReferenceModal'
 import HistoryModal from './components/HistoryModal'
-import { getApiKey, hasHiggsfieldCredentials, getSavedVideos, saveVideoToHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
+import { getApiKey, hasHiggsfieldCredentials, getSavedVideos, saveVideoToHistory, updateVideoInHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
 import { generateVideo, generateImage } from './services/api'
-import { deleteFromBlob } from './services/blobStorage'
+import { deleteFromBlob, persistGeneratedMedia } from './services/blobStorage'
 import { VIDEO_MODELS, IMAGE_MODELS, IMAGE_ASPECT_RATIOS } from './constants/models'
 import { AlertCircle } from 'lucide-react'
 
@@ -180,6 +180,7 @@ export default function App() {
         })
         setActiveVideo(result)
         setSavedVideos(saveVideoToHistory(result))
+        persistResult(result)
       } else {
         const currentModelObj = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0]
         const supportedRatios = currentModelObj.supportedRatios || ['16:9', '9:16']
@@ -218,6 +219,7 @@ export default function App() {
         })
         setActiveVideo(result)
         setSavedVideos(saveVideoToHistory(result))
+        persistResult(result)
       }
     } catch (err) {
       if (err.message === 'MISSING_API_KEY' || err.message === 'MISSING_HF_KEY') {
@@ -228,6 +230,44 @@ export default function App() {
     } finally {
       setIsGenerating(false)
       abortControllerRef.current = null
+    }
+  }
+
+  // Tự động lưu ảnh/video vừa tạo lên Cloudflare R2 (chạy nền, không chặn giao diện)
+  const persistResult = async (result) => {
+    const patchActive = (patch) =>
+      setActiveVideo(prev => (prev && prev.id === result.id ? { ...prev, ...patch } : prev))
+    patchActive({ storageStatus: 'saving', storageProgress: 0 })
+    try {
+      const stored = await persistGeneratedMedia(result, {
+        apiKey,
+        onProgress: (p) => patchActive({ storageProgress: p }),
+      })
+      if (!stored) {
+        patchActive({ storageStatus: null })
+        return
+      }
+      const patch = {
+        url: stored.url,
+        directUrl: stored.url,
+        storedUrl: stored.url,
+        sourceUrl: result.url,
+        ...(Array.isArray(result.allImages) ? { allImages: [stored.url, ...result.allImages.slice(1)] } : {}),
+      }
+      setSavedVideos(updateVideoInHistory(result.id, patch))
+      patchActive({ ...patch, storageStatus: 'saved' })
+    } catch (err) {
+      console.warn('Không lưu được lên R2:', err)
+      patchActive({ storageStatus: 'failed', storageError: err.message })
+    }
+  }
+
+  const deleteStoredFile = async (item) => {
+    if (!item?.storedUrl) return
+    try {
+      await deleteFromBlob(item.storedUrl)
+    } catch (err) {
+      console.warn('Không xóa được file trên R2:', err)
     }
   }
 
@@ -346,8 +386,18 @@ export default function App() {
         videos={savedVideos}
         apiKey={apiKey}
         onSelectVideo={vid => { setActiveVideo(vid); setShowHistory(false); }}
-        onRemoveVideo={id => setSavedVideos(removeVideoFromHistory(id))}
+        onRemoveVideo={id => {
+          const item = savedVideos.find(v => v.id === id)
+          if (item?.storedUrl && !window.confirm('Xóa mục này khỏi lịch sử và xóa luôn file đã lưu trên R2?')) return
+          deleteStoredFile(item)
+          setSavedVideos(removeVideoFromHistory(id))
+        }}
         onClearAll={() => {
+          const storedCount = savedVideos.filter(v => v.storedUrl).length
+          if (!window.confirm(storedCount
+            ? `Xóa toàn bộ lịch sử và ${storedCount} file đã lưu trên R2? Không thể hoàn tác.`
+            : 'Xóa toàn bộ lịch sử?')) return
+          savedVideos.forEach(deleteStoredFile)
           localStorage.removeItem('seedance_generated_videos')
           setSavedVideos([])
         }}

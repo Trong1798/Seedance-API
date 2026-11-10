@@ -174,9 +174,24 @@ print("Tải thành công!")`
                 <h3 className="text-sm font-bold text-white">
                   {isImage ? 'Hình ảnh hoàn thành' : 'Video hoàn thành'}
                 </h3>
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">
-                  {isImage ? 'Direct Image & Key' : 'Direct Stream & Key'}
-                </span>
+                {video.storageStatus === 'saving' ? (
+                  <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300 border border-zinc-700 text-[10px] font-semibold flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    Đang lưu lên R2{video.storageProgress ? ` ${video.storageProgress}%` : '...'}
+                  </span>
+                ) : video.storageStatus === 'failed' ? (
+                  <span title={video.storageError || ''} className="px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-300 border border-rose-500/20 text-[10px] font-semibold">
+                    Chưa lưu được lên R2 · link sẽ hết hạn
+                  </span>
+                ) : video.storedUrl ? (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[10px] font-semibold">
+                    Đã lưu vĩnh viễn (R2)
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-400 border border-zinc-700 text-[10px] font-semibold">
+                    Link nhà cung cấp (có hạn)
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-zinc-400 mt-0.5">
                 {video.model}{video.seconds ? ` • ${video.seconds}s` : ''} • {actualDimensions || video.size}

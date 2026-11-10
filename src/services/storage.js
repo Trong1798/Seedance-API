@@ -106,12 +106,26 @@ export function saveVideoToHistory(videoItem) {
     persistable.url = stripKey(persistable.url)
     persistable.directUrl = stripKey(persistable.directUrl)
     if (Array.isArray(persistable.allImages)) persistable.allImages = persistable.allImages.map(stripKey)
-    const updated = [persistable, ...list.filter(v => v.id !== videoItem.id)].slice(0, 50)
+    // Giữ tối đa 500 mục: ảnh/video đã lưu lên R2 rơi khỏi lịch sử vẫn còn trong bucket (xem trên Cloudflare)
+    const updated = [persistable, ...list.filter(v => v.id !== videoItem.id)].slice(0, 500)
     localStorage.setItem(STORAGE_KEYS.SAVED_VIDEOS, JSON.stringify(updated))
     return updated
   } catch (e) {
     console.error('Failed to save video:', e)
     return []
+  }
+}
+
+/** Cập nhật một mục trong lịch sử (vd. thay link nhà cung cấp bằng link R2 sau khi lưu xong) */
+export function updateVideoInHistory(id, patch) {
+  try {
+    const list = getSavedVideos()
+    const updated = list.map(v => (v.id === id ? { ...v, ...patch } : v))
+    localStorage.setItem(STORAGE_KEYS.SAVED_VIDEOS, JSON.stringify(updated))
+    return updated
+  } catch (e) {
+    console.error('Failed to update video:', e)
+    return getSavedVideos()
   }
 }
 
