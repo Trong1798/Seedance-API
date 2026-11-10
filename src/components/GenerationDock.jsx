@@ -251,10 +251,15 @@ export default function GenerationDock({
         onPaste={handlePaste}
         className={`relative z-20 rounded-3xl p-3 sm:p-4 transition-all ${
           docked
-            ? 'bg-[#141519]/55 backdrop-blur-2xl backdrop-saturate-150 border border-white/[0.14] shadow-[0_24px_60px_rgba(0,0,0,0.55),inset_0_1px_1px_rgba(255,255,255,0.12)] hover:border-white/25'
+            ? 'border border-white/[0.14] shadow-[0_24px_60px_rgba(0,0,0,0.55),inset_0_1px_1px_rgba(255,255,255,0.12)] hover:border-white/25'
             : 'bg-[#131418]/92 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.08)] hover:border-white/20'
         }`}
       >
+        {/* Lớp kính mờ tách riêng: nếu đặt backdrop-filter lên khung cha thì các menu bật lên bên trong
+            (tỉ lệ, chất lượng, model...) sẽ không làm mờ được nền phía sau và trông trong suốt */}
+        {docked && (
+          <div aria-hidden="true" className="absolute inset-0 -z-10 rounded-3xl bg-[#141519]/55 backdrop-blur-2xl backdrop-saturate-150 pointer-events-none" />
+        )}
         <div className="flex flex-col md:flex-row gap-3">
           
           {/* Mode Switcher */}
