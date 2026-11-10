@@ -1,9 +1,3 @@
-// ============================================================================
-// Ảnh: Seedance Creation Bot API (https://api.seedancecreationbot.online/docs)
-// Ảnh:   8 model (xem bảng giá trong /guide), ratio 1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3, tối đa 6 ảnh tham chiếu.
-// Giá thật theo từng tài khoản: GET /v1/prices (cần API key).
-// ============================================================================
-
 // Video: Xianfeng API (仙凤API) — https://xianfengapi.xyz/docs
 //   Hai model Seedance 2.5 (720p, 4–30 giây; 5–30 khi trên 9 ảnh; tối đa 30 ảnh tham chiếu; tính tiền theo video, CNY).
 //   Giá ghi trong tag là giá trên trang model lúc cập nhật; giá thật theo key xem bằng GET /v1/models.
@@ -44,16 +38,22 @@ export const VIDEO_MODELS = [
   },
 ]
 
+// Ảnh: Higgsfield Soul Cinema — https://docs.higgsfield.ai/docs/models/soul-cinema
+//   Chỉ tạo ảnh từ chữ (không nhận ảnh tham chiếu), phong cách điện ảnh cố định.
+//   aspect_ratio 9:16 / 16:9 / 4:3 / 3:4 / 1:1 / 2:3 / 3:2, resolution 720p / 1080p.
 export const IMAGE_MODELS = [
-  { id: 'GPT Image 2.5', name: 'GPT Image 2.5', tag: '700đ/ảnh', description: 'Model mặc định, đa năng, hỗ trợ ảnh tham chiếu' },
-  { id: 'Seedream 5.0', name: 'Seedream 5.0', tag: '500đ/ảnh', description: 'ByteDance Seedream 5.0' },
-  { id: 'Seedream 5.0 Pro', name: 'Seedream 5.0 Pro', tag: '900đ/ảnh', description: 'ByteDance Seedream 5.0 Pro, chi tiết cao' },
-  { id: 'Seedream 4.0S', name: 'Seedream 4.0S', tag: '400đ/ảnh', description: 'Rẻ nhất' },
-  { id: 'Nano Banana Pro', name: 'Nano Banana Pro', tag: '1.000đ/ảnh', description: 'Google Nano Banana Pro' },
-  { id: 'Nano Banana 2.1', name: 'Nano Banana 2.1', tag: '700đ/ảnh', description: 'Google Nano Banana 2.1' },
-  { id: 'Nano Banana 2', name: 'Nano Banana 2', tag: '800đ/ảnh', description: 'Google Nano Banana 2' },
-  { id: 'GPT Image 2', name: 'GPT Image 2', tag: '1.100đ/ảnh', description: 'OpenAI GPT Image 2' },
-].map(m => ({ ...m, supportsReference: true, maxReferenceImages: 6, supportedResolutions: [] }))
+  {
+    id: 'higgsfield-ai/soul/cinema',
+    name: 'Soul Cinema',
+    tag: 'Higgsfield',
+    description: 'Ảnh tĩnh phong cách điện ảnh · 720p / 1080p · chỉ tạo từ chữ',
+    provider: 'higgsfield',
+    supportsReference: false,
+    maxReferenceImages: 0,
+    supportedResolutions: ['1080p', '720p'],
+    defaultResolution: '1080p',
+  },
+]
 
 export const MODELS = VIDEO_MODELS
 
@@ -133,6 +133,8 @@ export const IMAGE_ASPECT_RATIOS = [
   { id: '1:1', label: '1:1', desc: 'Vuông Instagram 1:1', shape: 'square' },
   { id: '4:3', label: '4:3', desc: 'Ngang 4:3', shape: 'landscape-compact' },
   { id: '3:4', label: '3:4', desc: 'Dọc 3:4', shape: 'portrait-compact' },
+  { id: '3:2', label: '3:2', desc: 'Ngang 3:2 (khổ ảnh máy ảnh)', shape: 'landscape-compact' },
+  { id: '2:3', label: '2:3', desc: 'Dọc 2:3 (chân dung)', shape: 'portrait-compact' },
 ]
 
 export const VIDEO_RESOLUTIONS = [
@@ -142,9 +144,8 @@ export const VIDEO_RESOLUTIONS = [
 ]
 
 export const IMAGE_RESOLUTIONS = [
-  { id: '2k', label: '2k', desc: 'Độ nét cao 2K (Chuẩn)' },
-  { id: '4k', label: '4k', desc: 'Siêu nét 4K Ultra HD (Nano Banana Pro)' },
-  { id: '1k', label: '1k', desc: 'Tiêu chuẩn 1K' },
+  { id: '1080p', label: '1080p', desc: 'Full HD (mặc định)' },
+  { id: '720p', label: '720p', desc: 'HD' },
 ]
 
 export const RESOLUTIONS = VIDEO_RESOLUTIONS
@@ -227,45 +228,45 @@ export const INSPIRATION_PROMPTS = [
 
 export const IMAGE_INSPIRATION_PROMPTS = [
   {
-    label: 'Nano Banana Pro Cyber-Dragon',
+    label: 'Cyber Dragon',
     prompt: 'Ultra detailed 4K cinematic photo of a mechanical neon cyber dragon coiled around Tokyo tower at midnight, photorealistic, Unreal Engine 5 render',
-    model: 'Nano Banana Pro',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '16:9',
   },
   {
-    label: 'Nano Banana Ultrawide',
+    label: 'Neon Metropolis',
     prompt: 'Breathtaking 16:9 cinematic panorama of a neon cyberpunk metropolis in torrential rain, reflections on wet asphalt, volumetric fog, 4k cinematic',
-    model: 'Nano Banana Pro',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '16:9',
   },
   {
     label: 'Pixar Baby Dragon',
     prompt: 'Một chú rồng nhỏ dễ thương phong cách 3D Pixar, nền rừng tuyết lung linh, 8k',
-    model: 'GPT Image 2.5',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '1:1',
   },
   {
     label: 'Cyberpunk Neon City',
     prompt: 'Cyberpunk city night view, neon lights, ultra realistic 8k, cinematic lighting',
-    model: 'GPT Image 2.5',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '16:9',
   },
   {
     label: 'Golden Sunset',
     prompt: 'Golden hour dramatic sunburst over ocean waves, vibrant glowing lens flare, warm cinematic tones, 8k',
-    model: 'Seedream 5.0',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '16:9',
   },
   {
     label: 'Warrior Portrait',
     prompt: 'Cinematic close-up portrait of a warrior woman with intricate face paint in desert storm, intense dramatic lighting, 8k',
-    model: 'Seedream 5.0 Pro',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '9:16',
   },
   {
     label: 'Watercolor Pagoda',
     prompt: 'Watercolor oil painting of ancient pagoda on misty mountain peak, cherry blossoms, peaceful aesthetic',
-    model: 'Nano Banana 2.1',
+    model: 'higgsfield-ai/soul/cinema',
     ratio: '1:1',
   },
 ]

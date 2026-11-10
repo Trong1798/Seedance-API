@@ -216,7 +216,7 @@ export default function DockControls({
   const availableVideoRatios = ASPECT_RATIOS.filter(r => supportedVideoRatioIds.includes(r.id))
   const leftColVideoRatios = availableVideoRatios.filter(r => r.col === 'left')
   const rightColVideoRatios = availableVideoRatios.filter(r => r.col === 'right')
-  const supportedImageRes = currentModel?.supportedResolutions || ['1k', '2k']
+  const supportedImageRes = currentModel?.supportedResolutions || []
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-white/[0.08]">
@@ -465,8 +465,8 @@ export default function DockControls({
           )}
         </div>
 
-        {/* Resolution Popover (chỉ video — API tạo ảnh không có tham số độ phân giải) */}
-        {!isImageMode && (
+        {/* Resolution Popover (ẩn nếu model không có lựa chọn độ phân giải) */}
+        {(currentModel?.supportedResolutions?.length > 0) && (
         <div className="relative" ref={resolutionMenuRef}>
           <button
             type="button"
@@ -487,7 +487,6 @@ export default function DockControls({
             <div className="absolute bottom-full mb-2.5 left-0 z-50 min-w-[230px] p-2.5 rounded-2xl glass-popover animate-in fade-in zoom-in-95 duration-150">
               <div className="text-[10px] font-bold tracking-wider text-zinc-400 uppercase px-1 pb-2 border-b border-white/[0.08] mb-2 flex items-center justify-between">
                 <span>{isImageMode ? 'ĐỘ PHÂN GIẢI ẢNH' : 'ĐỘ PHÂN GIẢI VIDEO'}</span>
-                {isImageMode && <span className="text-[9px] text-[#e5ff00]">2K / 4K</span>}
               </div>
 
               <div className="flex flex-col gap-1">
@@ -520,7 +519,7 @@ export default function DockControls({
                           <span className="uppercase font-semibold">{res.label}</span>
                         </div>
                         <span className="text-[10px] text-zinc-400">
-                          {isSupported ? (res.id === '2k' ? 'Chuẩn' : res.id === '4k' ? 'Ultra HD' : '1K') : 'Chỉ Gemini 3 Pro'}
+                          {isSupported ? res.desc : 'Không hỗ trợ'}
                         </span>
                       </button>
                     )

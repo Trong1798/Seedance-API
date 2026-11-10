@@ -6,6 +6,8 @@ export const STORAGE_KEYS = {
   SAVED_VIDEOS: 'seedance_generated_videos',
   ACTIVE_TAB: 'seedance_active_tab',
   REFERENCE_IMAGES: 'seedance_reference_images',
+  HF_KEY_ID: 'higgsfield_key_id',
+  HF_KEY_SECRET: 'higgsfield_key_secret',
 }
 
 // Seedance Creation Bot API — web gọi qua lớp trung gian /api/sd (xem api/sd.js)
@@ -21,6 +23,28 @@ export function setApiKey(key) {
   } else {
     localStorage.setItem(STORAGE_KEYS.API_KEY, key.trim())
   }
+}
+
+// Higgsfield (tạo ảnh Soul Cinema): Key ID + Secret tạo tại https://console.higgsfield.ai
+export function getHiggsfieldCredentials() {
+  return {
+    keyId: localStorage.getItem(STORAGE_KEYS.HF_KEY_ID) || '',
+    secret: localStorage.getItem(STORAGE_KEYS.HF_KEY_SECRET) || '',
+  }
+}
+
+export function setHiggsfieldCredentials(keyId, secret) {
+  const id = String(keyId || '').trim()
+  const sec = String(secret || '').trim()
+  if (id) localStorage.setItem(STORAGE_KEYS.HF_KEY_ID, id)
+  else localStorage.removeItem(STORAGE_KEYS.HF_KEY_ID)
+  if (sec) localStorage.setItem(STORAGE_KEYS.HF_KEY_SECRET, sec)
+  else localStorage.removeItem(STORAGE_KEYS.HF_KEY_SECRET)
+}
+
+export function hasHiggsfieldCredentials() {
+  const { keyId, secret } = getHiggsfieldCredentials()
+  return Boolean(keyId && secret)
 }
 
 export function getBaseUrl() {

@@ -2,7 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { put, del } from '@vercel/blob'
-import { proxySeedance } from './api/_seedance-proxy.js'
+import { proxyHiggsfield } from './api/_higgsfield-proxy.js'
 
 // Plugin to support Vercel Blob API routes in Vite dev server (npm run dev)
 function vercelBlobDevPlugin(env) {
@@ -13,10 +13,10 @@ function vercelBlobDevPlugin(env) {
         const parsedUrl = new URL(req.url, 'http://localhost:5173')
         const token = env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_READ_WRITE_TOKEN
 
-        // Lớp trung gian Seedance (giống api/sd.js trên Vercel)
-        if (parsedUrl.pathname.startsWith('/api/sd/')) {
+        // Lớp trung gian Higgsfield (giống api/hf.js trên Vercel)
+        if (parsedUrl.pathname.startsWith('/api/hf/')) {
           try {
-            await proxySeedance(req, res, parsedUrl.pathname.slice('/api/sd/'.length), parsedUrl.searchParams)
+            await proxyHiggsfield(req, res, parsedUrl.pathname.slice('/api/hf/'.length))
           } catch (err) {
             res.statusCode = 500
             res.setHeader('Content-Type', 'application/json')

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Download, Copy, Check, ExternalLink, Sparkles, X, Share2, Film, Loader2, RefreshCw, AlertCircle, Terminal, Code2, Eye } from 'lucide-react'
-import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab, SEEDANCE_UPSTREAM } from '../services/api'
+import { fetchVideoBlob, resolveVideoUrl, getDirectVideoUrl, getDirectImageUrl, isMediaImage, openMediaInNewTab } from '../services/api'
 import { getApiKey } from '../services/storage'
 import MediaLightbox from './MediaLightbox'
 
@@ -20,11 +20,10 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
 
   const isImage = isMediaImage(video)
   const effectiveKey = apiKey || getApiKey()
-  // Link qua lớp trung gian /api/sd cần ?key= để thẻ <img>/<video> tải được; key luôn lấy từ Cài đặt hiện tại
-  const cleanUrl = isImage ? getDirectImageUrl(video.url, effectiveKey) : resolveVideoUrl(video.url)
-  const directUrl = isImage ? cleanUrl : getDirectVideoUrl(video.url || video.directUrl, effectiveKey)
-  // Link gốc của máy chủ Seedance (dùng trong đoạn code mẫu)
-  const upstreamUrl = String(resolveVideoUrl(video.url) || '').replace(/^\/api\/sd/, SEEDANCE_UPSTREAM).replace(/[?&]key=[^&]*/g, '')
+  const cleanUrl = isImage ? getDirectImageUrl(video.url) : resolveVideoUrl(video.url)
+  const directUrl = isImage ? cleanUrl : getDirectVideoUrl(video.url || video.directUrl)
+  // Link gốc (dùng để hiển thị, sao chép và trong đoạn code mẫu); bỏ ?key= nếu bản ghi cũ còn sót
+  const upstreamUrl = String(resolveVideoUrl(video.url) || '').replace(/[?&]key=[^&]*/g, '')
   const [actualDimensions, setActualDimensions] = useState(null)
 
   // Use direct stream URL as primary source for native streaming, with blob fallback
@@ -142,12 +141,15 @@ export default function VideoResult({ video, onClose, onReusePrompt, apiKey }) {
 
   // Không đưa key thật vào đoạn code (chỉ hiện vài ký tự đầu)
   const maskedKey = effectiveKey ? `${effectiveKey.slice(0, 8)}...` : '<API_KEY>'
-  const pythonSnippet = `# Cách tải ${isImage ? 'ảnh' : 'video'} bằng Python (Seedance Creation Bot API):
+  // Chỉ content_url của Xianfeng cần key; link ký sẵn của Xianfeng và link ảnh Higgsfield tải trực tiếp
+  const needsAuth = upstreamUrl.split('?')[0].endsWith('/content')
+  const pythonSnippet = `# Cách tải ${isImage ? 'ảnh (Higgsfield Soul Cinema)' : 'video (Xianfeng API)'} bằng Python:
 import requests
 
 url = "${upstreamUrl}"
-headers = {"Authorization": "Bearer ${maskedKey}"}  # thay bằng API key đầy đủ của bạn
-response = requests.get(url, headers=headers)
+${needsAuth
+    ? `headers = {"Authorization": "Bearer ${maskedKey}"}  # thay bằng API key Xianfeng đầy đủ\nresponse = requests.get(url, headers=headers)`
+    : `response = requests.get(url)  # link tải trực tiếp, có hạn sử dụng`}
 with open("seedance_${video.id || 'output'}.${isImage ? 'png' : 'mp4'}", "wb") as f:
     f.write(response.content)
 print("Tải thành công!")`

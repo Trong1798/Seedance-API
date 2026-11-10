@@ -7,7 +7,7 @@ import VideoResult from './components/VideoResult'
 import SettingsModal from './components/SettingsModal'
 import ReferenceModal from './components/ReferenceModal'
 import HistoryModal from './components/HistoryModal'
-import { getApiKey, getSavedVideos, saveVideoToHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
+import { getApiKey, hasHiggsfieldCredentials, getSavedVideos, saveVideoToHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
 import { generateVideo, generateImage } from './services/api'
 import { deleteFromBlob } from './services/blobStorage'
 import { VIDEO_MODELS, IMAGE_MODELS, IMAGE_ASPECT_RATIOS } from './constants/models'
@@ -75,6 +75,9 @@ export default function App() {
       if (!IMAGE_ASPECT_RATIOS.some(r => r.id === aspectRatio)) {
         setAspectRatio('16:9')
       }
+      if (!targetModel?.supportedResolutions?.includes(resolution)) {
+        setResolution(targetModel?.defaultResolution || '1080p')
+      }
     } else {
       const isVidModel = VIDEO_MODELS.some(m => m.id === model)
       const targetModel = isVidModel ? VIDEO_MODELS.find(m => m.id === model) : VIDEO_MODELS[0]
@@ -133,7 +136,8 @@ export default function App() {
   }
 
   const handleGenerate = async () => {
-    if (!apiKey) {
+    // Video dùng key Xianfeng, ảnh dùng key Higgsfield (Key ID + Secret) — thiếu key nào thì mở Cài đặt
+    if (mode === 'image' ? !hasHiggsfieldCredentials() : !apiKey) {
       setShowSettings(true)
       return
     }
@@ -154,14 +158,16 @@ export default function App() {
     try {
       if (mode === 'image') {
         const currentModelObj = IMAGE_MODELS.find(m => m.id === model) || IMAGE_MODELS[0]
-        const ratio = IMAGE_ASPECT_RATIOS.some(r => r.id === aspectRatio) ? aspectRatio : null
+        const ratio = IMAGE_ASPECT_RATIOS.some(r => r.id === aspectRatio) ? aspectRatio : '1:1'
+        const imageResolution = currentModelObj.supportedResolutions?.includes(resolution)
+          ? resolution
+          : currentModelObj.defaultResolution
 
         const result = await generateImage({
           model: currentModelObj.id,
           prompt,
           aspectRatio: ratio,
-          maxReferenceImages: currentModelObj.maxReferenceImages ?? 6,
-          referenceImage,
+          resolution: imageResolution,
           referenceImages,
           signal: controller.signal,
           onHeartbeat: (hb) => {
@@ -214,7 +220,7 @@ export default function App() {
         setSavedVideos(saveVideoToHistory(result))
       }
     } catch (err) {
-      if (err.message === 'MISSING_API_KEY') {
+      if (err.message === 'MISSING_API_KEY' || err.message === 'MISSING_HF_KEY') {
         setShowSettings(true)
       } else {
         setErrorMsg(err.message || (mode === 'image' ? 'Lỗi khi tạo ảnh. Vui lòng kiểm tra lại kết nối.' : 'Lỗi khi tạo video. Vui lòng kiểm tra lại kết nối.'))
@@ -257,7 +263,7 @@ export default function App() {
             onClearReferenceImages={handleClearReferenceImages}
             onGenerate={handleGenerate}
             isGenerating={isGenerating}
-            hasApiKey={Boolean(apiKey)}
+            hasApiKey={mode === 'image' ? hasHiggsfieldCredentials() : Boolean(apiKey)}
             onOpenSettings={() => setShowSettings(true)}
           />
         </div>

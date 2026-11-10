@@ -1,15 +1,15 @@
-import { getApiKey } from './storage.js'
+import { getApiKey, getHiggsfieldCredentials } from './storage.js'
 
 // ============================================================================
 // VIDEO: Xianfeng API (仙凤API) — https://xianfengapi.xyz/docs#model-seedance
-//   Có hỗ trợ CORS nên gọi thẳng từ trình duyệt. Model "seedance-2.5", tính tiền theo video (CNY).
-// ẢNH:  Seedance Creation Bot API — https://api.seedancecreationbot.online (qua lớp trung gian /api/sd
-//   vì máy chủ đó không hỗ trợ CORS). Tài liệu Xianfeng không có API tạo ảnh.
+//   Có hỗ trợ CORS nên gọi thẳng từ trình duyệt. Tính tiền theo video (CNY).
+// ẢNH:  Higgsfield Soul Cinema — https://docs.higgsfield.ai/docs/models/soul-cinema
+//   Higgsfield chặn gọi từ trình duyệt nên đi qua lớp trung gian của web: /api/hf/<đường dẫn>
+//   (api/hf.js trên Vercel, middleware trong vite.config.js khi chạy trên máy).
 // ============================================================================
 export const XIANFENG_ORIGIN = 'https://xianfengapi.xyz'
 export const XIANFENG_BASE = `${XIANFENG_ORIGIN}/v1`
-export const SEEDANCE_UPSTREAM = 'https://api.seedancecreationbot.online'
-export const API_BASE = '/api/sd/v1'
+export const HF_PROXY = '/api/hf'
 const WALLET_HINT = 'Nạp tiền trong mục Ví (钱包) trên xianfengapi.xyz.'
 
 const sleep = (ms, signal) => new Promise((resolve, reject) => {
@@ -123,36 +123,17 @@ export async function readApiError(res, kind = 'video') {
 // Đường dẫn media
 // ---------------------------------------------------------------------------
 
-/**
- * Đưa mọi đường dẫn file của Seedance về lớp trung gian của web:
- *  https://api.seedancecreationbot.online/v1/... → /api/sd/v1/...
- *  /v1/...                                         → /api/sd/v1/...
- */
+/** Xianfeng trả content_url dạng tương đối (/v1/videos/{id}/content) → đổi thành link đầy đủ */
 export function resolveVideoUrl(rawUrl) {
   if (!rawUrl) return null
   if (rawUrl.startsWith('blob:') || rawUrl.startsWith('data:')) return rawUrl
-  if (rawUrl.startsWith(SEEDANCE_UPSTREAM)) return `/api/sd${rawUrl.slice(SEEDANCE_UPSTREAM.length)}`
-  // Xianfeng trả content_url dạng tương đối: /v1/videos/{id}/content
   if (rawUrl.startsWith('/v1/videos/')) return `${XIANFENG_ORIGIN}${rawUrl}`
-  if (rawUrl.startsWith('/v1/')) return `/api/sd${rawUrl}`
   return rawUrl
 }
 
 /** Link tải video của Xianfeng cần header Authorization (content_url); link ký sẵn (download_url) thì không */
 const isXianfengAuthUrl = (url) => typeof url === 'string' &&
   url.startsWith(`${XIANFENG_BASE}/videos/`) && url.split('?')[0].endsWith('/content')
-
-const isProxyUrl = (url) => typeof url === 'string' && url.startsWith('/api/sd/')
-
-/** Thêm ?key= cho link đi qua lớp trung gian (thẻ <video>/<img> không gửi được header). */
-function withKey(url, apiKey) {
-  const key = (apiKey || getApiKey() || '').trim()
-  if (!isProxyUrl(url) || !key) return url
-  const [base, qs = ''] = url.split('?')
-  const params = new URLSearchParams(qs)
-  params.set('key', key)
-  return `${base}?${params.toString()}`
-}
 
 /** Nhận biết một mục là ảnh hay video */
 export function isMediaImage(item) {
@@ -167,22 +148,18 @@ export function isMediaImage(item) {
   if (item.mediaType === 'image') return true
   if (item.mediaType === 'video') return false
   const modelStr = String(item.model || '').toLowerCase()
-  if (/image|banana|seedream|flare|sunburst/.test(modelStr)) return true
+  if (/image|banana|seedream|soul|flare|sunburst/.test(modelStr)) return true
   return isMediaImage(String(item.url || item.directUrl || ''))
 }
 
-/** Link ảnh dùng được trực tiếp trong <img> */
-export function getDirectImageUrl(rawUrl, apiKey) {
-  if (!rawUrl) return null
-  const resolved = resolveVideoUrl(rawUrl)
-  return isProxyUrl(resolved) ? withKey(resolved, apiKey) : resolved
+/** Link ảnh dùng được trực tiếp trong <img> (ảnh Soul Cinema là link CDN công khai) */
+export function getDirectImageUrl(rawUrl) {
+  return rawUrl ? resolveVideoUrl(rawUrl) : null
 }
 
-/** Link video dùng được trực tiếp trong <video> */
-export function getDirectVideoUrl(rawUrl, apiKey) {
-  if (!rawUrl) return null
-  const resolved = resolveVideoUrl(rawUrl)
-  return isProxyUrl(resolved) ? withKey(resolved, apiKey) : resolved
+/** Link video dùng trong <video>. content_url của Xianfeng cần key nên web tải về dạng blob trước khi phát. */
+export function getDirectVideoUrl(rawUrl) {
+  return rawUrl ? resolveVideoUrl(rawUrl) : null
 }
 
 /** Tải file về bộ nhớ trình duyệt (blob:) để phát/tải xuống ổn định */
@@ -191,7 +168,7 @@ export async function fetchVideoBlob(url, apiKey) {
   if (url.startsWith('blob:') || url.startsWith('data:')) return url
   const resolved = resolveVideoUrl(url)
   const key = (apiKey || getApiKey() || '').trim()
-  const headers = (isProxyUrl(resolved) || isXianfengAuthUrl(resolved)) && key ? authHeaders(key) : {}
+  const headers = isXianfengAuthUrl(resolved) && key ? authHeaders(key) : {}
   const res = await fetch(resolved, { credentials: 'omit', headers })
   if (!res.ok) {
     const err = await readApiError(res, 'status')
@@ -201,20 +178,18 @@ export async function fetchVideoBlob(url, apiKey) {
 }
 
 // ---------------------------------------------------------------------------
-// Theo dõi đơn (video & ảnh dùng chung)
+// Theo dõi đơn video (Xianfeng)
 // ---------------------------------------------------------------------------
 
 const DONE = ['completed', 'succeeded']
 const FAILED = ['failed', 'cancelled', 'canceled', 'error']
 
 /**
- * Hỏi trạng thái đơn đến khi xong: GET /v1/videos/{id} hoặc /v1/images/{id}.
+ * Hỏi trạng thái đơn video đến khi xong: GET https://xianfengapi.xyz/v1/videos/{id}.
  * Lỗi tạm thời (mạng, 5xx, 429) được thử lại; lỗi 5xx liên tục quá maxServerErrorMs thì dừng và báo rõ.
  */
 export async function pollJob(kind, id, apiKey, { signal, onHeartbeat, intervalMs = 15000, maxServerErrorMs = 5 * 60 * 1000 } = {}) {
-  const endpoint = kind === 'image'
-    ? `${API_BASE}/images/${encodeURIComponent(id)}`
-    : `${XIANFENG_BASE}/videos/${encodeURIComponent(id)}`
+  const endpoint = `${XIANFENG_BASE}/videos/${encodeURIComponent(id)}`
   const label = kind === 'image' ? 'ảnh' : 'video'
   let firstServerErrorAt = null
 
@@ -277,11 +252,6 @@ export async function pollJob(kind, id, apiKey, { signal, onHeartbeat, intervalM
 
 // Giữ tên cũ cho các chỗ đang dùng
 export const pollVideoStatus = (videoId, apiKey, _baseUrl, opts) => pollJob('video', videoId, apiKey, opts)
-
-function newClientRef(prefix) {
-  const rand = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`).replace(/-/g, '')
-  return `${prefix}-${rand}`.slice(0, 64)
-}
 
 function selectedReferenceUrls(referenceImages, referenceImage) {
   return Array.isArray(referenceImages) && referenceImages.length > 0
@@ -433,113 +403,187 @@ export async function generateVideo({
   }
 }
 
-/** Hủy việc tạo ảnh đang xếp hàng (Seedance Creation Bot) — tự hoàn tiền. Trả true nếu hủy được. */
-export async function cancelJob(kind, id, apiKey) {
-  if (kind !== 'image') return false
-  try {
-    const res = await fetch(`${API_BASE}/images/${encodeURIComponent(id)}`, {
-      method: 'DELETE',
-      headers: authHeaders(apiKey || getApiKey()),
-    })
-    return res.ok
-  } catch {
-    return false
-  }
+// ---------------------------------------------------------------------------
+// Tạo ảnh — Higgsfield Soul Cinema (POST /higgsfield-ai/soul/cinema, qua /api/hf)
+// ---------------------------------------------------------------------------
+
+function hfAuthHeaders(json = false) {
+  const { keyId, secret } = getHiggsfieldCredentials()
+  const h = { Authorization: `Key ${keyId}:${secret}` }
+  if (json) h['Content-Type'] = 'application/json'
+  return h
 }
 
-// ---------------------------------------------------------------------------
-// Tạo ảnh — POST /v1/images (xếp hàng rồi hỏi kết quả như video)
-// ---------------------------------------------------------------------------
+/** Đọc lỗi Higgsfield ({"detail": "..."} hoặc danh sách lỗi kiểm tra dữ liệu) và diễn giải theo bảng mã lỗi */
+async function readHiggsfieldError(res) {
+  let detail = ''
+  try {
+    const json = await res.json()
+    detail = Array.isArray(json.detail)
+      ? json.detail.map(d => `${(d.loc || []).filter(x => x !== 'body').join('.')}: ${d.msg}`).join('; ')
+      : String(json.detail || json.message || '')
+  } catch {}
+  const s = res.status
+  const friendly =
+    s === 401 ? 'Higgsfield Key ID hoặc Secret sai. Kiểm tra lại trong phần Cài đặt (tạo key tại console.higgsfield.ai).'
+    : s === 403 ? 'Tài khoản Higgsfield không đủ số dư. Nạp thêm tại console.higgsfield.ai.'
+    : s === 404 ? 'Không tìm thấy (model chưa mở cho tài khoản này, hoặc sai ID yêu cầu).'
+    : s === 400 || s === 422 ? 'Dữ liệu gửi lên không hợp lệ (prompt, tỉ lệ hoặc độ phân giải).'
+    : s === 423 ? 'Model Soul Cinema đang tạm khóa. Thử lại sau.'
+    : s === 429 ? `Hàng chờ của tài khoản đã đầy hoặc gửi quá nhanh.${res.headers.get('retry-after') ? ` Thử lại sau ${res.headers.get('retry-after')} giây.` : ' Thử lại sau.'}`
+    : s === 503 ? 'Model đang tạm ngưng hoặc chưa sẵn sàng. Thử lại sau.'
+    : s >= 500 ? 'Máy chủ Higgsfield đang lỗi tạm thời. Thử lại sau.'
+    : `Lỗi không xác định (HTTP ${s}).`
+  const cid = res.headers.get('x-correlation-id')
+  const err = new Error(`${friendly} (HTTP ${s}${cid ? ` · correlation id: ${cid}` : ''})${detail && detail !== friendly ? `\nChi tiết từ máy chủ: ${detail}` : ''}`)
+  err.status = s
+  return err
+}
+
+/** status_url/cancel_url của Higgsfield → đường dẫn tương ứng qua lớp trung gian /api/hf */
+function toHfProxy(url) {
+  return String(url).replace(/^https:\/\/api\.higgsfield\.ai\//, `${HF_PROXY}/`)
+}
 
 /**
- * Trường gửi lên: prompt, model (vd. "GPT Image 2.5"), n (1-4), ratio (1:1, 16:9, 9:16, 4:3, 3:4, 3:2, 2:3),
- * images (tối đa 6 ảnh tham chiếu), client_ref.
+ * Soul Cinema chỉ tạo ảnh từ chữ (không nhận ảnh tham chiếu).
+ * Trường gửi lên: prompt, aspect_ratio (9:16, 16:9, 4:3, 3:4, 1:1, 2:3, 3:2), resolution (720p | 1080p),
+ * enhance_prompt, batch_size (1 hoặc 4). Kết quả: images[].url (link CDN, giữ 7 ngày).
  */
 export async function generateImage({
-  model = 'GPT Image 2.5',
+  model = 'higgsfield-ai/soul/cinema',
   prompt,
-  aspectRatio = null,
-  n = 1,
-  referenceImage = null,
+  aspectRatio = '1:1',
+  resolution = '1080p',
+  enhancePrompt = false,
   referenceImages = null,
-  maxReferenceImages = 6,
-  pollIntervalMs = 5000,
-  maxWaitMs = 15 * 60 * 1000,
+  maxWaitMs = 10 * 60 * 1000,
   signal = null,
   onHeartbeat = null,
 }) {
-  const apiKey = getApiKey()
-  if (!apiKey) throw new Error('MISSING_API_KEY')
+  const { keyId, secret } = getHiggsfieldCredentials()
+  if (!keyId || !secret) throw new Error('MISSING_HF_KEY')
   if (!prompt || !prompt.trim()) throw new Error('Vui lòng nhập mô tả (prompt) cho hình ảnh!')
 
-  const images = selectedReferenceUrls(referenceImages, referenceImage)
-  if (images.length > maxReferenceImages) {
-    throw new Error(`Tạo ảnh chỉ hỗ trợ tối đa ${maxReferenceImages} ảnh tham chiếu (bạn đang chọn ${images.length} ảnh).`)
+  const selectedRefs = Array.isArray(referenceImages) ? referenceImages.filter(i => i.selected).length : 0
+  const payload = {
+    prompt: prompt.trim(),
+    aspect_ratio: aspectRatio || '1:1',
+    resolution: resolution === '720p' ? '720p' : '1080p',
+    enhance_prompt: Boolean(enhancePrompt),
+    batch_size: 1,
   }
-
-  const payload = { prompt: prompt.trim(), model, n, client_ref: newClientRef('img') }
-  if (aspectRatio) payload.ratio = aspectRatio
-  if (images.length > 0) payload.images = images
 
   const controller = new AbortController()
   let isTimedOut = false
-  let jobId = null
+  let requestId = null
+  let cancelUrl = null
   const timeoutId = setTimeout(() => { isTimedOut = true; controller.abort('timeout') }, maxWaitMs)
   signal?.addEventListener('abort', () => controller.abort(signal.reason || 'User cancelled'), { once: true })
 
   try {
-    onHeartbeat?.({ timestamp: Date.now(), status: 'generating', message: 'Đang gửi yêu cầu tạo ảnh...' })
-    const res = await fetch(`${API_BASE}/images`, {
+    onHeartbeat?.({
+      timestamp: Date.now(),
+      status: 'generating',
+      message: selectedRefs > 0
+        ? 'Soul Cinema chỉ tạo ảnh từ chữ — ảnh tham chiếu đang chọn sẽ không được dùng. Đang gửi yêu cầu...'
+        : 'Đang gửi yêu cầu tạo ảnh Soul Cinema...',
+    })
+    const res = await fetch(`${HF_PROXY}/${model}`, {
       method: 'POST',
-      headers: authHeaders(apiKey, true),
+      headers: {
+        ...hfAuthHeaders(true),
+        // Tài liệu khuyên gửi Idempotency-Key để gửi lại an toàn khi mạng chập chờn mà không tạo trùng
+        'Idempotency-Key': globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      },
       body: JSON.stringify(payload),
       signal: controller.signal,
     })
-    if (!res.ok) {
-      const err = await readApiError(res, 'image')
-      if (res.status === 400 || res.status === 422) err.message += `\nRequest đã gửi: ${summarizePayload(payload)}`
-      throw err
-    }
+    if (!res.ok) throw await readHiggsfieldError(res)
 
     let data = await res.json()
-    jobId = data.id
-    if (!jobId) throw new Error('Máy chủ không trả về ID việc tạo ảnh.')
-    if (!DONE.includes(data.status)) {
-      data = await pollJob('image', jobId, apiKey, { signal: controller.signal, onHeartbeat, intervalMs: pollIntervalMs })
+    requestId = data.request_id
+    cancelUrl = data.cancel_url ? toHfProxy(data.cancel_url) : null
+    const statusUrl = toHfProxy(data.status_url || `https://api.higgsfield.ai/requests/${requestId}/status`)
+
+    // Hỏi trạng thái: bắt đầu 2 giây, tăng dần tới 10 giây (theo hướng dẫn Polling)
+    let delay = 2000
+    let serverErrors = 0
+    while (!['completed', 'failed', 'nsfw', 'canceled'].includes(data.status)) {
+      onHeartbeat?.({
+        timestamp: Date.now(),
+        status: data.status,
+        message: data.status === 'queued' ? 'Đang xếp hàng trên Higgsfield...' : 'Soul Cinema đang tạo ảnh...',
+      })
+      await sleep(delay + Math.random() * 500, controller.signal)
+      delay = Math.min(delay * 1.5, 10000)
+      const st = await fetch(statusUrl, { headers: hfAuthHeaders(), signal: controller.signal })
+      if (!st.ok) {
+        if (st.status >= 500 && ++serverErrors < 10) continue
+        throw await readHiggsfieldError(st)
+      }
+      serverErrors = 0
+      data = await st.json()
     }
     clearTimeout(timeoutId)
 
-    const files = Array.isArray(data.images) && data.images.length > 0
-      ? data.images
-      : [`/v1/images/${jobId}/file/0`]
-    const fileUrl = resolveVideoUrl(files[0])
+    if (data.status === 'nsfw') {
+      throw new Error('Higgsfield từ chối nội dung (bị kiểm duyệt NSFW). Hãy sửa lại prompt. Yêu cầu bị từ chối không bị tính phí.')
+    }
+    if (data.status === 'failed' || data.status === 'canceled') {
+      throw new Error(`Tạo ảnh ${data.status === 'failed' ? 'thất bại' : 'đã bị hủy'}${data.error ? `: ${data.error}` : ''}. Không bị tính phí.`)
+    }
+
+    const urls = (data.images || []).map(i => i.url).filter(Boolean)
+    if (urls.length === 0) throw new Error('Higgsfield không trả về ảnh nào.')
 
     return {
-      id: jobId,
+      id: requestId,
       mediaType: 'image',
-      url: fileUrl,
-      directUrl: getDirectImageUrl(fileUrl, apiKey),
-      allImages: files.map(f => resolveVideoUrl(f)),
+      url: urls[0],
+      directUrl: urls[0],
+      allImages: urls,
       prompt: prompt.trim(),
-      model,
-      ratio: payload.ratio || null,
-      price: data.price ?? null,
-      referenceImage: images[0] || null,
+      model: 'Soul Cinema',
+      ratio: payload.aspect_ratio,
+      resolution: payload.resolution,
+      expiresAt: data.expires_at || null,
       status: 'completed',
       createdAt: new Date().toISOString(),
       raw: data,
     }
   } catch (err) {
     clearTimeout(timeoutId)
-    if (isTimedOut) throw new Error(`Tạo ảnh quá ${Math.round(maxWaitMs / 60000)} phút chưa xong${jobId ? ` (ID: ${jobId})` : ''}. Vui lòng thử lại sau.`)
+    if (isTimedOut) throw new Error(`Tạo ảnh quá ${Math.round(maxWaitMs / 60000)} phút chưa xong${requestId ? ` (request id: ${requestId})` : ''}. Thử lại sau.`)
     if (err.name === 'AbortError' || signal?.aborted) {
-      if (jobId) await cancelJob('image', jobId, apiKey)
+      // Còn xếp hàng thì hủy được (POST cancel_url); đã chạy thì Higgsfield trả 400 và vẫn tạo xong
+      if (cancelUrl) {
+        try { await fetch(cancelUrl, { method: 'POST', headers: hfAuthHeaders() }) } catch {}
+      }
       throw new Error('Đã hủy tạo ảnh.')
     }
-    if (err instanceof TypeError) {
-      throw new Error(`Không kết nối được tới máy chủ (${err.message}). Kiểm tra kết nối mạng.`)
-    }
+    if (err instanceof TypeError) throw new Error(`Không kết nối được tới máy chủ (${err.message}).`)
     throw err
+  }
+}
+
+/**
+ * Kiểm tra Key ID + Secret Higgsfield mà không tốn tiền: hỏi trạng thái một ID không tồn tại.
+ * Key đúng → 404 (không có yêu cầu này); key sai → 401.
+ */
+export async function testHiggsfieldCredentials(keyId, secret) {
+  if (!keyId?.trim() || !secret?.trim()) return { success: false, message: 'Nhập cả Key ID và Secret của Higgsfield.' }
+  try {
+    const res = await fetch(`${HF_PROXY}/requests/00000000-0000-4000-8000-000000000000/status`, {
+      headers: { Authorization: `Key ${keyId.trim()}:${secret.trim()}` },
+      cache: 'no-store',
+    })
+    if (res.status === 404) return { success: true, message: 'Higgsfield Key hợp lệ!' }
+    if (res.status === 401) return { success: false, message: 'Higgsfield Key ID hoặc Secret sai.' }
+    const err = await readHiggsfieldError(res)
+    return { success: false, message: err.message }
+  } catch (e) {
+    return { success: false, message: 'Lỗi kiểm tra kết nối: ' + e.message }
   }
 }
 
@@ -577,7 +621,7 @@ export async function testApiKey(apiKey) {
  */
 export function openMediaInNewTab(url, title = 'Xem nội dung Media') {
   if (!url) return
-  // Link tương đối (vd. /api/sd/...) phải đổi thành tuyệt đối vì tab mới là about:blank
+  // Link tương đối phải đổi thành tuyệt đối vì tab mới là about:blank
   if (url.startsWith('/')) url = window.location.origin + url
 
   const isHttp = url.startsWith('http://') || url.startsWith('https://')
