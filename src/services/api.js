@@ -132,7 +132,7 @@ export function resolveVideoUrl(rawUrl) {
 }
 
 /** Link tải video của Xianfeng cần header Authorization (content_url); link ký sẵn (download_url) thì không */
-const isXianfengAuthUrl = (url) => typeof url === 'string' &&
+export const isXianfengAuthUrl = (url) => typeof url === 'string' &&
   url.startsWith(`${XIANFENG_BASE}/videos/`) && url.split('?')[0].endsWith('/content')
 
 /** Nhận biết một mục là ảnh hay video */

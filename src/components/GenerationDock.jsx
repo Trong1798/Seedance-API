@@ -27,6 +27,7 @@ export default function GenerationDock({
   isGenerating,
   hasApiKey,
   onOpenSettings,
+  docked = false, // nằm nổi ở đáy màn hình: kính mờ, ẩn gợi ý, menu @ mở lên trên
 }) {
   const isImageMode = mode === 'image'
   const textareaRef = useRef(null)
@@ -223,7 +224,7 @@ export default function GenerationDock({
   }
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4">
+    <div className={docked ? 'w-full' : 'w-full max-w-4xl mx-auto px-4'}>
       {/* Hidden file input for image uploads from mention prompt */}
       <input
         ref={fileInputRef}
@@ -248,7 +249,11 @@ export default function GenerationDock({
       {/* Floating Pill Dock Container */}
       <div
         onPaste={handlePaste}
-        className="relative z-20 bg-[#131418]/92 border border-white/10 rounded-3xl p-3 sm:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.08)] transition-all hover:border-white/20"
+        className={`relative z-20 rounded-3xl p-3 sm:p-4 transition-all ${
+          docked
+            ? 'bg-[#141519]/55 backdrop-blur-2xl backdrop-saturate-150 border border-white/[0.14] shadow-[0_24px_60px_rgba(0,0,0,0.55),inset_0_1px_1px_rgba(255,255,255,0.12)] hover:border-white/25'
+            : 'bg-[#131418]/92 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.6),inset_0_1px_1px_rgba(255,255,255,0.08)] hover:border-white/20'
+        }`}
       >
         <div className="flex flex-col md:flex-row gap-3">
           
@@ -362,7 +367,7 @@ export default function GenerationDock({
               {showMentionMenu && (
                 <div
                   ref={mentionPopoverRef}
-                  className="absolute left-0 top-full mt-1 z-50 min-w-[210px] max-w-xs bg-[#16171b]/98 backdrop-blur-2xl border border-white/15 rounded-2xl p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-100"
+                  className={`absolute left-0 ${docked ? 'bottom-full mb-2' : 'top-full mt-1'} z-50 min-w-[210px] max-w-xs bg-[#16171b]/98 backdrop-blur-2xl border border-white/15 rounded-2xl p-1.5 shadow-[0_16px_48px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-100`}
                 >
                   {effectiveImages.length > 0 ? (
                     <div className="flex flex-col gap-1">
@@ -453,7 +458,7 @@ export default function GenerationDock({
       </div>
 
       {/* Quick Inspiration Chips */}
-      <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar justify-center">
+      {!docked && <div className="mt-4 flex items-center gap-2 overflow-x-auto pb-1 text-xs no-scrollbar justify-center">
         <span className="text-zinc-500 text-[11px] font-semibold flex items-center gap-1 shrink-0">
           <Sparkles className="w-3 h-3 text-[#e5ff00]" /> Thử ngay:
         </span>
@@ -471,7 +476,7 @@ export default function GenerationDock({
             {p.label}
           </button>
         ))}
-      </div>
+      </div>}
     </div>
   )
 }

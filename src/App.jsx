@@ -2,16 +2,16 @@ import React, { useState, useEffect, useRef } from 'react'
 import Header from './components/Header'
 import HeroShowcase from './components/HeroShowcase'
 import GenerationDock from './components/GenerationDock'
-import GenerationProgress from './components/GenerationProgress'
-import VideoResult from './components/VideoResult'
+import MediaGallery from './components/MediaGallery'
+import MediaViewer from './components/MediaViewer'
 import SettingsModal from './components/SettingsModal'
 import ReferenceModal from './components/ReferenceModal'
-import HistoryModal from './components/HistoryModal'
 import { getApiKey, hasHiggsfieldCredentials, getSavedVideos, saveVideoToHistory, updateVideoInHistory, removeVideoFromHistory, getReferenceImages, saveReferenceImages } from './services/storage'
 import { generateVideo, generateImage } from './services/api'
 import { deleteFromBlob, persistGeneratedMedia } from './services/blobStorage'
 import { VIDEO_MODELS, IMAGE_MODELS, IMAGE_ASPECT_RATIOS } from './constants/models'
-import { AlertCircle } from 'lucide-react'
+import { downloadMedia, isImageItem, findModel, ratioOf } from './services/media'
+import { AlertCircle, X, Download, Trash2, CheckCircle2 } from 'lucide-react'
 
 export default function App() {
   const [apiKey, setApiKey] = useState(getApiKey())
@@ -32,7 +32,6 @@ export default function App() {
     }
   }, [])
   const [isGenerating, setIsGenerating] = useState(false)
-  const [activeVideo, setActiveVideo] = useState(null)
   useEffect(() => {
     saveReferenceImages(referenceImages)
   }, [referenceImages])
@@ -41,7 +40,13 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState('')
   const [showSettings, setShowSettings] = useState(false)
   const [showReferenceModal, setShowReferenceModal] = useState(false)
-  const [showHistory, setShowHistory] = useState(false)
+  const [sessionBlobs, setSessionBlobs] = useState({}) // id → blob: của video vừa tạo (phát ngay, không cần tải lại)
+  const [storageState, setStorageState] = useState({}) // id → {status, progress, error} khi đang lưu lên R2
+  const [viewerId, setViewerId] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(() => new Set())
+  const [toast, setToast] = useState('')
+  const [genInfo, setGenInfo] = useState(null) // {startedAt, mediaType, ratio}
+  const toastTimerRef = useRef(null)
   const [heartbeatCount, setHeartbeatCount] = useState(0)
   const [lastHeartbeat, setLastHeartbeat] = useState(null)
   const [generationStatus, setGenerationStatus] = useState('')
@@ -147,7 +152,8 @@ export default function App() {
     }
     setErrorMsg('')
     setIsGenerating(true)
-    setActiveVideo(null)
+    setGenInfo({ startedAt: Date.now(), mediaType: mode, ratio: ratioOf({ ratio: aspectRatio, mediaType: mode }) })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     setHeartbeatCount(0)
     setLastHeartbeat(null)
     setGenerationStatus('')
@@ -178,9 +184,7 @@ export default function App() {
             }
           },
         })
-        setActiveVideo(result)
-        setSavedVideos(saveVideoToHistory(result))
-        persistResult(result)
+        onGenerated({ ...result, modelId: currentModelObj.id, references: [] })
       } else {
         const currentModelObj = VIDEO_MODELS.find(m => m.id === model) || VIDEO_MODELS[0]
         const supportedRatios = currentModelObj.supportedRatios || ['16:9', '9:16']
@@ -217,9 +221,11 @@ export default function App() {
             }
           },
         })
-        setActiveVideo(result)
-        setSavedVideos(saveVideoToHistory(result))
-        persistResult(result)
+        onGenerated({
+          ...result,
+          modelId: currentModelObj.id,
+          references: referenceImages.filter(i => i.selected).map(({ url, name }) => ({ url, name })),
+        })
       }
     } catch (err) {
       if (err.message === 'MISSING_API_KEY' || err.message === 'MISSING_HF_KEY') {
@@ -233,20 +239,33 @@ export default function App() {
     }
   }
 
+  const showToast = (msg) => {
+    setToast(msg)
+    clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast(''), 2600)
+  }
+
+  const onGenerated = (result) => {
+    if (result.blobUrl) setSessionBlobs(prev => ({ ...prev, [result.id]: result.blobUrl }))
+    setSavedVideos(saveVideoToHistory(result))
+    persistResult(result)
+  }
+
   // Tự động lưu ảnh/video vừa tạo lên Cloudflare R2 (chạy nền, không chặn giao diện)
   const persistResult = async (result) => {
-    const patchActive = (patch) =>
-      setActiveVideo(prev => (prev && prev.id === result.id ? { ...prev, ...patch } : prev))
-    patchActive({ storageStatus: 'saving', storageProgress: 0 })
+    const setStore = (v) => setStorageState(prev => {
+      const next = { ...prev }
+      if (v) next[result.id] = v
+      else delete next[result.id]
+      return next
+    })
+    setStore({ status: 'saving', progress: 0 })
     try {
       const stored = await persistGeneratedMedia(result, {
         apiKey,
-        onProgress: (p) => patchActive({ storageProgress: p }),
+        onProgress: (p) => setStore({ status: 'saving', progress: p }),
       })
-      if (!stored) {
-        patchActive({ storageStatus: null })
-        return
-      }
+      if (!stored) { setStore(null); return }
       const patch = {
         url: stored.url,
         directUrl: stored.url,
@@ -255,10 +274,10 @@ export default function App() {
         ...(Array.isArray(result.allImages) ? { allImages: [stored.url, ...result.allImages.slice(1)] } : {}),
       }
       setSavedVideos(updateVideoInHistory(result.id, patch))
-      patchActive({ ...patch, storageStatus: 'saved' })
+      setStore(null)
     } catch (err) {
       console.warn('Không lưu được lên R2:', err)
-      patchActive({ storageStatus: 'failed', storageError: err.message })
+      setStore({ status: 'failed', error: err.message })
     }
   }
 
@@ -271,23 +290,171 @@ export default function App() {
     }
   }
 
+  const handleDeleteItems = (ids) => {
+    const targets = savedVideos.filter(v => ids.includes(v.id))
+    if (!targets.length) return
+    const stored = targets.filter(v => v.storedUrl).length
+    const what = targets.length === 1 ? (isImageItem(targets[0]) ? 'ảnh này' : 'video này') : `${targets.length} mục đã chọn`
+    if (!window.confirm(`Xóa ${what}?${stored ? ' File đã lưu trên R2 cũng bị xóa vĩnh viễn.' : ''}`)) return
+    targets.forEach(deleteStoredFile)
+    let list = savedVideos
+    targets.forEach(t => { list = removeVideoFromHistory(t.id) })
+    setSavedVideos(list)
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      ids.forEach(id => next.delete(id))
+      return next
+    })
+    if (viewerId && ids.includes(viewerId)) {
+      const oldIndex = savedVideos.findIndex(v => v.id === viewerId)
+      const nextItem = list[Math.min(oldIndex, list.length - 1)]
+      setViewerId(nextItem ? nextItem.id : null)
+    }
+  }
+
+  const handleDownload = async (item) => {
+    try {
+      await downloadMedia(item, { apiKey, sessionBlobs })
+    } catch (err) {
+      showToast(`Không tải được: ${err.message}`)
+    }
+  }
+
+  // Recreate: nạp lại prompt + toàn bộ cài đặt (và ảnh tham chiếu đã dùng) vào khung nhập để tạo lại
+  const handleRecreate = (item) => {
+    const isImg = isImageItem(item)
+    const m = findModel(item) || (isImg ? IMAGE_MODELS[0] : VIDEO_MODELS[0])
+    setMode(isImg ? 'image' : 'video')
+    setModel(m.id)
+    if (item.ratio) setAspectRatio(item.ratio)
+    setResolution(m.supportedResolutions?.includes(item.resolution) ? item.resolution : m.defaultResolution)
+    if (!isImg && item.seconds) setSeconds(item.seconds)
+    setPrompt(item.prompt || '')
+    if (Array.isArray(item.references)) {
+      const urls = item.references.map(r => r.url)
+      setReferenceImages(prev => {
+        const updated = prev.map(img => ({ ...img, selected: urls.includes(img.url) }))
+        item.references.forEach((r, i) => {
+          if (!updated.some(img => img.url === r.url)) {
+            updated.push({ id: `ref-${Date.now()}-${i}`, name: r.name || `Image ${i + 1}`, url: r.url, pathname: null, selected: true })
+          }
+        })
+        setReferenceImage(updated.find(img => img.selected)?.url || null)
+        return updated
+      })
+    }
+    setViewerId(null)
+    showToast('Đã nạp lại prompt và cài đặt — bấm Generate để tạo lại')
+  }
+
+  // Reference: thêm ảnh đã tạo vào danh sách ảnh tham chiếu (không gắn pathname để gỡ ref không xóa file gốc)
+  const handleUseAsReference = (item) => {
+    const url = item.storedUrl || item.url
+    const existing = referenceImages.find(img => img.url === url)
+    if (existing) {
+      setReferenceImages(prev => {
+        const updated = prev.map(img => (img.url === url ? { ...img, selected: true } : img))
+        setReferenceImage(updated.find(i => i.selected)?.url || null)
+        return updated
+      })
+    } else {
+      handleAddReferenceImage(url, null, `Gen ${String(item.id).slice(-6)}`)
+    }
+    const currentImageModel = IMAGE_MODELS.find(m => m.id === model)
+    if (mode === 'image' && !currentImageModel?.supportsReference) handleModeChange('video')
+    setViewerId(null)
+    showToast('Đã thêm vào References')
+  }
+
+  const toggleSelect = (id) => setSelectedIds(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+
+  const viewerIndex = viewerId ? savedVideos.findIndex(v => v.id === viewerId) : -1
+
   const activeModelsList = mode === 'image' ? IMAGE_MODELS : VIDEO_MODELS
   const currentModelObj = activeModelsList.find(m => m.id === model) || activeModelsList[0]
 
+  const hasItems = savedVideos.length > 0 || isGenerating
+
   return (
-    <div className="min-h-screen bg-[#09090b] text-[#f4f4f5] flex flex-col justify-between selection:bg-[#e5ff00] selection:text-black">
+    <div className="min-h-screen bg-[#09090b] text-[#f4f4f5] flex flex-col selection:bg-[#e5ff00] selection:text-black">
       <Header
         hasApiKey={Boolean(apiKey)}
         onOpenSettings={() => setShowSettings(true)}
-        onOpenHistory={() => setShowHistory(true)}
+        onOpenHistory={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         historyCount={savedVideos.length}
       />
 
-      <main className="flex-1 pb-16">
-        <HeroShowcase onSelectPrompt={p => setPrompt(p)} />
+      <main className="flex-1 pb-72">
+        {!hasItems && <HeroShowcase onSelectPrompt={p => setPrompt(p)} />}
 
-        <div className="mt-2 mb-8">
+        {hasItems && (
+          <div className="px-1.5 sm:px-2 pt-2">
+            <MediaGallery
+              items={savedVideos}
+              sessionBlobs={sessionBlobs}
+              storageState={storageState}
+              pending={isGenerating ? {
+                ...genInfo,
+                status: generationStatus,
+                onCancel: () => abortControllerRef.current?.abort('User cancelled'),
+              } : null}
+              selectedIds={selectedIds}
+              onOpen={setViewerId}
+              onToggleSelect={toggleSelect}
+              onDownload={handleDownload}
+              onRecreate={handleRecreate}
+              onReference={handleUseAsReference}
+              onDelete={(item) => handleDeleteItems([item.id])}
+            />
+          </div>
+        )}
+      </main>
+
+      {/* Thanh thao tác khi chọn nhiều */}
+      {selectedIds.size > 0 && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 pl-4 pr-1.5 py-1.5 rounded-full bg-[#16171b]/80 backdrop-blur-xl border border-white/15 shadow-[0_12px_40px_rgba(0,0,0,0.6)] text-sm">
+          <span className="font-semibold text-white mr-1">Đã chọn {selectedIds.size}</span>
+          <button type="button" onClick={async () => {
+            for (const item of savedVideos.filter(v => selectedIds.has(v.id))) await handleDownload(item)
+          }} className="px-3 py-1.5 rounded-full hover:bg-white/10 text-zinc-200 flex items-center gap-1.5">
+            <Download className="w-4 h-4" /> Tải xuống
+          </button>
+          <button type="button" onClick={() => handleDeleteItems([...selectedIds])}
+            className="px-3 py-1.5 rounded-full hover:bg-rose-500/80 text-zinc-200 hover:text-white flex items-center gap-1.5">
+            <Trash2 className="w-4 h-4" /> Xóa
+          </button>
+          <button type="button" title="Bỏ chọn" onClick={() => setSelectedIds(new Set())}
+            className="w-8 h-8 rounded-full hover:bg-white/10 text-zinc-300 flex items-center justify-center">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Khung nhập prompt nổi ở giữa phía dưới */}
+      <div className="fixed bottom-3 sm:bottom-5 inset-x-0 z-40 pointer-events-none">
+        <div className="max-w-4xl mx-auto px-3 pointer-events-auto">
+          {(errorMsg || toast) && (
+            <div className="mb-2 flex justify-center">
+              {errorMsg ? (
+                <div className="max-w-2xl w-full p-3 rounded-2xl bg-rose-950/70 backdrop-blur-xl border border-rose-500/30 text-rose-200 text-xs sm:text-sm flex items-start gap-2.5 shadow-xl">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <div className="flex-1 whitespace-pre-line break-words"><span className="font-bold">Lỗi: </span>{errorMsg}</div>
+                  <button type="button" onClick={() => setErrorMsg('')} className="text-rose-300 hover:text-white"><X className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <div className="px-4 py-2 rounded-full bg-[#16171b]/80 backdrop-blur-xl border border-white/15 text-xs text-white flex items-center gap-2 shadow-xl">
+                  <CheckCircle2 className="w-4 h-4 text-[#e5ff00]" /> {toast}
+                </div>
+              )}
+            </div>
+          )}
           <GenerationDock
+            docked
             mode={mode}
             onModeChange={handleModeChange}
             prompt={prompt} setPrompt={setPrompt}
@@ -307,46 +474,23 @@ export default function App() {
             onOpenSettings={() => setShowSettings(true)}
           />
         </div>
+      </div>
 
-        {errorMsg && (
-          <div className="max-w-2xl mx-auto px-4 mb-6">
-            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs sm:text-sm flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-              <div className="flex-1 whitespace-pre-line break-words"><span className="font-bold">Lỗi: </span>{errorMsg}</div>
-            </div>
-          </div>
-        )}
-
-        {isGenerating && (
-          <GenerationProgress
-            mediaType={mode}
-            modelName={currentModelObj.name}
-            seconds={seconds}
-            prompt={prompt}
-            heartbeatCount={heartbeatCount}
-            lastHeartbeat={lastHeartbeat}
-            statusMessage={generationStatus}
-            onCancel={() => abortControllerRef.current?.abort('User cancelled')}
-          />
-        )}
-
-        {activeVideo && !isGenerating && (
-          <VideoResult
-            video={activeVideo}
-            onClose={() => setActiveVideo(null)}
-            onReusePrompt={(p) => {
-              setPrompt(p)
-              window.scrollTo({ top: 350, behavior: 'smooth' })
-            }}
-            apiKey={apiKey}
-          />
-        )}
-      </main>
-
-      <footer className="border-t border-zinc-800/80 py-6 text-center text-xs text-zinc-500">
-        <p>Seedance 2.5 Cinema Studio • Xianfeng API</p>
-        <p className="text-[11px] text-zinc-600 mt-1">API Key lưu trữ cục bộ tại trình duyệt (LocalStorage)</p>
-      </footer>
+      {viewerIndex >= 0 && (
+        <MediaViewer
+          items={savedVideos}
+          index={viewerIndex}
+          onNavigate={(i) => setViewerId(savedVideos[i]?.id || null)}
+          onClose={() => setViewerId(null)}
+          sessionBlobs={sessionBlobs}
+          storageState={storageState}
+          apiKey={apiKey}
+          onRecreate={handleRecreate}
+          onReference={handleUseAsReference}
+          onDownload={handleDownload}
+          onDelete={(item) => handleDeleteItems([item.id])}
+        />
+      )}
 
       <SettingsModal
         isOpen={showSettings}
@@ -379,30 +523,6 @@ export default function App() {
           })
         }}
       />
-
-      <HistoryModal
-        isOpen={showHistory}
-        onClose={() => setShowHistory(false)}
-        videos={savedVideos}
-        apiKey={apiKey}
-        onSelectVideo={vid => { setActiveVideo(vid); setShowHistory(false); }}
-        onRemoveVideo={id => {
-          const item = savedVideos.find(v => v.id === id)
-          if (item?.storedUrl && !window.confirm('Xóa mục này khỏi lịch sử và xóa luôn file đã lưu trên R2?')) return
-          deleteStoredFile(item)
-          setSavedVideos(removeVideoFromHistory(id))
-        }}
-        onClearAll={() => {
-          const storedCount = savedVideos.filter(v => v.storedUrl).length
-          if (!window.confirm(storedCount
-            ? `Xóa toàn bộ lịch sử và ${storedCount} file đã lưu trên R2? Không thể hoàn tác.`
-            : 'Xóa toàn bộ lịch sử?')) return
-          savedVideos.forEach(deleteStoredFile)
-          localStorage.removeItem('seedance_generated_videos')
-          setSavedVideos([])
-        }}
-      />
     </div>
   )
 }
-
