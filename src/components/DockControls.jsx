@@ -479,7 +479,9 @@ export default function DockControls({
             title={isImageMode ? 'Độ phân giải ảnh' : 'Độ phân giải video'}
           >
             <Diamond className="w-3.5 h-3.5 text-[#e5ff00] shrink-0" />
-            <span className="uppercase">{resolution}</span>
+            <span className="uppercase">
+              {isImageMode ? (IMAGE_RESOLUTIONS.find(r => r.id === resolution)?.label || resolution) : resolution}
+            </span>
             <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${showResolutionMenu ? 'rotate-180 text-[#e5ff00]' : ''}`} />
           </button>
 
@@ -519,7 +521,7 @@ export default function DockControls({
                           <span className="uppercase font-semibold">{res.label}</span>
                         </div>
                         <span className="text-[10px] text-zinc-400">
-                          {isSupported ? res.desc : 'Không hỗ trợ'}
+                          {isSupported ? (res.desc || '') : 'Không hỗ trợ'}
                         </span>
                       </button>
                     )

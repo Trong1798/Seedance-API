@@ -143,9 +143,10 @@ export const VIDEO_RESOLUTIONS = [
   { id: '1080p', label: '1080p', desc: 'Độ nét cao Full HD' },
 ]
 
+// id là giá trị gửi lên API Higgsfield (chỉ nhận "720p" / "1080p"); label là tên hiển thị giống web Higgsfield
 export const IMAGE_RESOLUTIONS = [
-  { id: '1080p', label: '1080p', desc: 'Full HD (mặc định)' },
-  { id: '720p', label: '720p', desc: 'HD' },
+  { id: '1080p', label: '2K', desc: '' },
+  { id: '720p', label: '1.5K', desc: '' },
 ]
 
 export const RESOLUTIONS = VIDEO_RESOLUTIONS
