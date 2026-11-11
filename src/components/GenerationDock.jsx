@@ -101,6 +101,71 @@ export default function GenerationDock({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  // Kéo-thả ảnh từ thư mục vào khung prompt để thêm làm ảnh tham chiếu
+  const [isDragOver, setIsDragOver] = useState(false)
+  const [uploadingCount, setUploadingCount] = useState(0)
+  const dragDepthRef = useRef(0)
+
+  const uploadReferenceFiles = async (files) => {
+    const images = files.filter(f => f.type?.startsWith('image/'))
+    if (!images.length) {
+      if (files.length) alert('Chỉ hỗ trợ kéo thả file ảnh (PNG, JPG, WEBP, GIF).')
+      return
+    }
+    setUploadingCount(c => c + images.length)
+    // Upload lần lượt để ảnh giữ đúng thứ tự Image1, Image2...
+    for (const file of images) {
+      try {
+        const { blobUrl, pathname } = await uploadToBlob(file)
+        onAddReferenceImage?.(blobUrl, pathname, file.name || 'Dropped Image')
+      } catch (error) {
+        console.error('Upload error:', error)
+        alert(`Lỗi upload ${file.name}: ${error.message}`)
+      } finally {
+        setUploadingCount(c => c - 1)
+      }
+    }
+  }
+
+  const hasFiles = (e) => Array.from(e.dataTransfer?.types || []).includes('Files')
+
+  // Thả file ra ngoài khung thì trình duyệt sẽ mở ảnh và rời khỏi web — chặn lại
+  useEffect(() => {
+    const block = (e) => { if (hasFiles(e)) e.preventDefault() }
+    window.addEventListener('dragover', block)
+    window.addEventListener('drop', block)
+    return () => {
+      window.removeEventListener('dragover', block)
+      window.removeEventListener('drop', block)
+    }
+  }, [])
+
+  const dropHandlers = {
+    onDragEnter: (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      dragDepthRef.current += 1
+      setIsDragOver(true)
+    },
+    onDragOver: (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    },
+    onDragLeave: (e) => {
+      if (!hasFiles(e)) return
+      dragDepthRef.current = Math.max(0, dragDepthRef.current - 1)
+      if (dragDepthRef.current === 0) setIsDragOver(false)
+    },
+    onDrop: (e) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      dragDepthRef.current = 0
+      setIsDragOver(false)
+      uploadReferenceFiles(Array.from(e.dataTransfer.files || []))
+    },
+  }
+
   // Handle image paste from clipboard (Ctrl+V)
   const handlePaste = async (e) => {
     const items = e.clipboardData?.items
@@ -249,6 +314,7 @@ export default function GenerationDock({
       {/* Floating Pill Dock Container */}
       <div
         onPaste={handlePaste}
+        {...dropHandlers}
         className={`relative z-20 rounded-3xl p-3 sm:p-4 transition-all ${
           docked
             ? 'border border-white/[0.14] shadow-[0_24px_60px_rgba(0,0,0,0.55),inset_0_1px_1px_rgba(255,255,255,0.12)] hover:border-white/25'
@@ -259,6 +325,17 @@ export default function GenerationDock({
             (tỉ lệ, chất lượng, model...) sẽ không làm mờ được nền phía sau và trông trong suốt */}
         {docked && (
           <div aria-hidden="true" className="absolute inset-0 -z-10 rounded-3xl bg-[#141519]/55 backdrop-blur-2xl backdrop-saturate-150 pointer-events-none" />
+        )}
+        {isDragOver && (
+          <div className="absolute inset-0 z-30 rounded-3xl border-2 border-dashed border-[#e5ff00]/80 bg-[#0c0d10]/80 backdrop-blur-sm flex items-center justify-center gap-2 text-sm font-semibold text-[#e5ff00] pointer-events-none">
+            <Upload className="w-5 h-5" /> Thả ảnh vào đây để thêm làm ảnh tham chiếu
+          </div>
+        )}
+        {uploadingCount > 0 && (
+          <div className="absolute -top-3 left-1/2 -translate-x-1/2 z-30 px-3 py-1 rounded-full bg-[#16171b]/90 backdrop-blur-md border border-white/15 text-[11px] text-zinc-200 flex items-center gap-1.5 shadow-lg pointer-events-none">
+            <span className="w-3 h-3 rounded-full border-2 border-[#e5ff00] border-t-transparent animate-spin" />
+            Đang tải {uploadingCount} ảnh lên...
+          </div>
         )}
         <div className="flex flex-col md:flex-row gap-3">
           

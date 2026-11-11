@@ -6,7 +6,9 @@ const FOLDERS = ['references', 'images', 'videos']
 const MAX_MIRROR_BYTES = 50 * 1024 * 1024
 
 export function getR2Config() {
-  const accountId = (process.env.R2_ACCOUNT_ID || '').trim()
+  // Chấp nhận cả khi dán nguyên link S3 endpoint (https://<id>.r2.cloudflarestorage.com): chỉ lấy mã 32 ký tự
+  const rawAccount = (process.env.R2_ACCOUNT_ID || '').trim()
+  const accountId = (rawAccount.match(/[0-9a-f]{32}/i) || [rawAccount])[0]
   const accessKeyId = (process.env.R2_ACCESS_KEY_ID || '').trim()
   const secretAccessKey = (process.env.R2_SECRET_ACCESS_KEY || '').trim()
   const bucket = (process.env.R2_BUCKET || '').trim()
